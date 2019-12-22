@@ -1,0 +1,17 @@
+messaging:
+  streams:
+    application.id: normalizer
+  topics:
+    # Categorized by how the topic will be used by streams. If a topic is both Output and Input,
+    # it will be categorized as "input". Further, streams do not support consuming a topic as global
+    # and non-global.
+    input:
+      trade: trade-raw
+    output:
+      trade: trade-normalized
+    global:
+      security: security
+    global-private:
+      # None
+    private:
+      # none

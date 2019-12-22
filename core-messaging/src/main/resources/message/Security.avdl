@@ -1,0 +1,20 @@
+@namespace("org.galatea.kafka.starter.messaging.security")
+protocol Simple {
+
+  record SecurityMsgKey {
+    string securityId;
+  }
+
+  record SecurityIsinMsgKey {
+    string isin;
+  }
+
+  record SecurityMsgValue {
+    // frequently values are paired with a different key, for repartitioning purposes.
+    // To reduce the need for redundant message formats, all properties should be included in messages
+    string securityId;
+    string ric;
+    string isin;
+    string bbg;
+  }
+}

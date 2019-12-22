@@ -1,0 +1,16 @@
+@namespace("org.galatea.kafka.starter.messaging.trade")
+protocol Simple {
+
+  record TradeMsgKey {
+    string tradeId;
+  }
+
+  record TradeMsgValue {
+    string tradeId;
+    string securityId;
+    string counterparty;
+    string portfolio;
+    long qty;
+  }
+
+}

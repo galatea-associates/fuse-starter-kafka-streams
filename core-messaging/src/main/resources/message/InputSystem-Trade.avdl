@@ -1,0 +1,22 @@
+/* These messages should be identical to what we receive from an external system,
+ * and namespace should contain the name of the external system, to differentiate the input trade
+ * messages from the normalized trade messages */
+@namespace("org.galatea.kafka.starter.messaging.trade.input")
+protocol Simple {
+
+  /** Message key for trade received from external system */
+  record InputTradeMsgKey {
+    string tradeId;
+  }
+
+  /** Message value for trade received from external system */
+  record InputTradeMsgValue {
+    string tradeId;
+    /** ISIN of security for this trade */
+    string isin;
+    string counterparty;
+    string portfolio;
+    long qty;
+  }
+
+}
