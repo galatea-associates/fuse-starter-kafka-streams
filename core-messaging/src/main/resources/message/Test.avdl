@@ -1,0 +1,26 @@
+@namespace("org.galatea.kafka.starter.messaging.test")
+protocol Simple {
+
+  enum TestEnum {
+    ENUM_VALUE1, ENUM_VALUE2
+  }
+
+  record TestSubMsg {
+    string nonNullableString;
+    union{null, string} nullableStringField;
+    TestEnum nonNullableEnum;
+  }
+
+  record TestMsg {
+    union{null, map<TestSubMsg>} nullableMapField;
+    union{null, array<TestSubMsg>} nullableArrayField;
+    map<TestSubMsg> nonNullableMapField;
+    array<TestSubMsg> nonNullableArrayField;
+    union{null, TestSubMsg} nullableRecordField;
+    TestSubMsg nonNullableRecordField;
+
+    string nonNullableStringField;
+    union{null, string} nullableStringField;
+  }
+
+}
