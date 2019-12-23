@@ -21,6 +21,8 @@ protocol Simple {
 
     string nonNullableStringField;
     union{null, string} nullableStringField;
+    timestamp_ms nonNullableTimestamp;
+    date nonNullableDate;
   }
 
 }

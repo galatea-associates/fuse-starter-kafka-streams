@@ -38,16 +38,15 @@ public class StreamController extends BaseStreamingService {
 
     KStream<InputTradeMsgKey, TradeMsgValue> securityJoinedTradeStream = tradeStream
         .join(securityTable,
-            (tradeKey, tradeValue) ->
-                SecurityIsinMsgKey.newBuilder().setIsin(tradeValue.getIsin()).build(),
-            (tradeMsg, securityMsg) ->
-                TradeMsgValue.newBuilder()
-                    .setTradeId(tradeMsg.getTradeId())
-                    .setSecurityId(securityMsg.getSecurityId())
-                    .setCounterparty(tradeMsg.getCounterparty())
-                    .setPortfolio(tradeMsg.getPortfolio())
-                    .setQty(tradeMsg.getQty())
-                    .build());
+            (tradeKey, tradeValue) -> SecurityIsinMsgKey.newBuilder().setIsin(tradeValue.getIsin())
+                .build(),
+            (tradeMsg, securityMsg) -> TradeMsgValue.newBuilder()
+                .setTradeId(tradeMsg.getTradeId())
+                .setSecurityId(securityMsg.getSecurityId())
+                .setCounterparty(tradeMsg.getCounterparty())
+                .setPortfolio(tradeMsg.getPortfolio())
+                .setQty(tradeMsg.getQty())
+                .build());
 
     KStream<TradeMsgKey, TradeMsgValue> outputTradeStream = securityJoinedTradeStream
         .selectKey((inputTradeKey, tradeValue) -> TradeMsgKey.newBuilder()
