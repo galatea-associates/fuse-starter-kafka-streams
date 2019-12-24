@@ -2,12 +2,9 @@ package org.galatea.kafka.starter.streams;
 
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.TopologyTestDriver;
 import org.apache.kafka.streams.test.ConsumerRecordFactory;
 import org.galatea.kafka.starter.TestConfig;
@@ -15,11 +12,11 @@ import org.galatea.kafka.starter.messaging.StreamProperties;
 import org.galatea.kafka.starter.messaging.Topic;
 import org.galatea.kafka.starter.messaging.security.SecurityIsinMsgKey;
 import org.galatea.kafka.starter.messaging.security.SecurityMsgValue;
+import org.galatea.kafka.starter.messaging.trade.TradeMsgKey;
+import org.galatea.kafka.starter.messaging.trade.TradeMsgValue;
 import org.galatea.kafka.starter.messaging.trade.input.InputTradeMsgKey;
 import org.galatea.kafka.starter.messaging.trade.input.InputTradeMsgValue;
-import org.galatea.kafka.starter.testing.TopicConfig;
 import org.galatea.kafka.starter.testing.TopologyTester;
-import org.galatea.kafka.starter.testing.bean.RecordBeanHelper;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -44,6 +41,8 @@ public class StreamControllerTest {
   private Topic<InputTradeMsgKey, InputTradeMsgValue> inputTradeTopic;
   @Autowired
   private Topic<SecurityIsinMsgKey, SecurityMsgValue> securityTopic;
+  @Autowired
+  private Topic<TradeMsgKey, TradeMsgValue> normalizedTradeTopic;
 
   private static TopologyTestDriver driver = null;
   private static ConsumerRecordFactory<InputTradeMsgKey, InputTradeMsgValue> tradeFactory;
@@ -52,38 +51,52 @@ public class StreamControllerTest {
 
   @Before
   public void setup() {
-    driver = new TopologyTestDriver(controller.buildTopology(), properties.asProperties());
-    tradeFactory = new ConsumerRecordFactory<>(inputTradeTopic.getName(),
-        inputTradeTopic.getKeySerde().serializer(), inputTradeTopic.getValueSerde().serializer());
-    securityFactory = new ConsumerRecordFactory<>(securityTopic.getName(),
-        securityTopic.getKeySerde().serializer(), securityTopic.getValueSerde().serializer());
-    tester = new TopologyTester();
+//    driver = new TopologyTestDriver(controller.buildTopology(), properties.asProperties());
+//    tradeFactory = new ConsumerRecordFactory<>(inputTradeTopic.getName(),
+//        inputTradeTopic.getKeySerde().serializer(), inputTradeTopic.getValueSerde().serializer());
+//    securityFactory = new ConsumerRecordFactory<>(securityTopic.getName(),
+//        securityTopic.getKeySerde().serializer(), securityTopic.getValueSerde().serializer());
+
+    if (tester == null) {
+      tester = new TopologyTester(controller.buildTopology(), properties.asProperties());
+      tester.configureInputTopic(securityTopic, SecurityIsinMsgKey::new, SecurityMsgValue::new);
+      tester.configureInputTopic(inputTradeTopic, InputTradeMsgKey::new, InputTradeMsgValue::new);
+      tester.configureOutputTopic(normalizedTradeTopic, TradeMsgKey::new, TradeMsgValue::new);
+    }
+    tester.beforeTest();
+
   }
 
   @Test
   @SneakyThrows
   public void testInput() {
-    TopicConfig<SecurityIsinMsgKey, SecurityMsgValue> securityTopicConfig = new TopicConfig<>(
-        SecurityIsinMsgKey::new, SecurityMsgValue::new);
+
     Map<String, String> securityRecordMap = new HashMap<>();
     securityRecordMap.put("isin", "isin1");
     securityRecordMap.put("securityId", "secId");
-    KeyValue<SecurityIsinMsgKey, SecurityMsgValue> securityRecord = RecordBeanHelper
-        .createRecord(securityRecordMap, securityTopicConfig);
+    tester.pipeInput(securityTopic, securityRecordMap);
 
     Map<String, String> tradeRecordMap = new HashMap<>();
     tradeRecordMap.put("isin", "isin1");
-    TopicConfig<InputTradeMsgKey, InputTradeMsgValue> tradeTopicConfig = new TopicConfig<>(
-        InputTradeMsgKey::new, InputTradeMsgValue::new);
-    KeyValue<InputTradeMsgKey, InputTradeMsgValue> tradeRecord = RecordBeanHelper
-        .createRecord(tradeRecordMap, tradeTopicConfig);
+    tester.pipeInput(inputTradeTopic, tradeRecordMap);
 
-    List<ConsumerRecord<byte[], byte[]>> securityRecordRaw = securityFactory
-        .create(Collections.singletonList(securityRecord));
-
-    log.info("Piping in record: {}", securityRecord);
-    log.info("Piping in record: {} | {}", securityRecordRaw.get(0).key(), securityRecordRaw.get(0).value());
-    driver.pipeInput(securityRecordRaw);
-    driver.pipeInput(tradeFactory.create(Collections.singletonList(tradeRecord)));
+    Map<String, String> expectedOutput = new HashMap<>();
+    expectedOutput.put("securityId", "secId");
+    tester.assertOutput(normalizedTradeTopic, Collections.singletonList(expectedOutput), true);
   }
+
+  @Test
+  @SneakyThrows
+  public void testInput2() {
+
+    Map<String, String> securityRecordMap = new HashMap<>();
+    securityRecordMap.put("isin", "isin2");
+    securityRecordMap.put("securityId", "secId");
+    tester.pipeInput(securityTopic, securityRecordMap);
+
+    Map<String, String> tradeRecordMap = new HashMap<>();
+    tradeRecordMap.put("isin", "isin1");
+    tester.pipeInput(inputTradeTopic, tradeRecordMap);
+  }
+
 }
