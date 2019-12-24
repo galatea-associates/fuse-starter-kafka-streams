@@ -5,13 +5,9 @@ import static org.junit.Assert.fail;
 import static org.unitils.reflectionassert.ReflectionAssert.assertReflectionEquals;
 
 import java.io.File;
-import java.nio.file.FileSystem;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -22,7 +18,6 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.specific.SpecificRecord;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.protocol.types.Field.Str;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsConfig;
@@ -36,8 +31,6 @@ import org.galatea.kafka.starter.testing.alias.AliasHelper;
 import org.galatea.kafka.starter.testing.avro.AvroMessageUtil;
 import org.galatea.kafka.starter.testing.bean.RecordBeanHelper;
 import org.springframework.util.FileSystemUtils;
-import org.springframework.util.ReflectionUtils;
-import org.unitils.reflectionassert.ReflectionAssert;
 import org.unitils.reflectionassert.ReflectionComparatorMode;
 
 @Slf4j
@@ -57,7 +50,6 @@ public class TopologyTester {
           FileSystemUtils.deleteRecursively(dirFile));
     }
     driver = new TopologyTestDriver(topology, streamProperties);
-
   }
 
   public void beforeTest() {
@@ -115,25 +107,21 @@ public class TopologyTester {
   /**
    * maps within list of expected records may NOT have different key sets
    */
-  public <K, V> void assertOutput(Topic<K, V> topic, List<Map<String, String>> expectedRecords,
+  public <K, V> void assertOutputList(Topic<K, V> topic, List<Map<String, String>> expectedRecords,
       boolean lenientOrder) throws Exception {
     TopicConfig<K, V> topicConfig = outputTopicConfig(topic);
 
-    List<KeyValue<K, V>> actualOutput = readOutput(topicConfig);
-    if (!actualOutput.isEmpty()) {
-      assertFalse("actualOutput is not empty but expectedOutput is. At least 1 record is required "
+    List<KeyValue<K, V>> output = readOutput(topicConfig);
+    if (!output.isEmpty()) {
+      assertFalse("output is not empty but expectedOutput is. At least 1 record is required "
           + "in 'expectedRecords' for in-depth comparison", expectedRecords.isEmpty());
     }
     Set<String> expectedFields = AliasHelper
         .expandAliasKeys(expectedRecords.get(0).keySet(), topicConfig.getAliases());
 
-    List<KeyValue<K, V>> comparableActualOutput = new ArrayList<>();
-    for (KeyValue<K, V> actualOutputRecord : actualOutput) {
-      // copy properties from actual output records into new records that ONLY have those fields set
-      comparableActualOutput.add(RecordBeanHelper
-          .copyRecordPropertiesIntoNew(expectedFields, actualOutputRecord, topicConfig,
-              RecordBeanHelper.PREFIX_KEY, RecordBeanHelper.PREFIX_VALUE));
-    }
+    // comparableActualOutput has only necessary fields populated, as defined by 'expectedFields'
+    List<KeyValue<K, V>> comparableActualOutput = stripUnnecessaryFields(output,
+        expectedFields, topicConfig);
 
     List<KeyValue<K, V>> expectedOutput = new ArrayList<>();
     for (Map<String, String> expectedRecordMap : expectedRecords) {
@@ -149,6 +137,59 @@ public class TopologyTester {
     }
 
     assertListEquals(expectedOutput, comparableActualOutput, lenientOrder);
+  }
+
+  public <K, V> void assertOutputMap(Topic<K, V> topic, List<Map<String, String>> expectedRecords)
+      throws Exception {
+    TopicConfig<K, V> topicConfig = outputTopicConfig(topic);
+
+    List<KeyValue<K, V>> output = readOutput(topicConfig);
+    Map<K,V> outputMap = new HashMap<>();
+    for (KeyValue<K, V> outputRecord : output) {
+      outputMap.put(outputRecord.key, outputRecord.value);
+    }
+
+    List<KeyValue<K,V>> reducedOutput = new ArrayList<>();
+    outputMap.forEach((key, value) -> reducedOutput.add(new KeyValue<>(key, value)));
+
+    if (!output.isEmpty()) {
+      assertFalse("output is not empty but expectedOutput is. At least 1 record is required "
+          + "in 'expectedRecords' for in-depth comparison", expectedRecords.isEmpty());
+    }
+    Set<String> expectedFields = AliasHelper
+        .expandAliasKeys(expectedRecords.get(0).keySet(), topicConfig.getAliases());
+
+    List<KeyValue<K, V>> comparableOutput = stripUnnecessaryFields(reducedOutput, expectedFields,
+        topicConfig);
+
+    List<KeyValue<K, V>> expectedOutput = new ArrayList<>();
+    for (Map<String, String> expectedRecordMap : expectedRecords) {
+      if (!expectedRecordMap.keySet().equals(expectedFields)) {
+        throw new IllegalArgumentException(String.format("Expected records (as maps) have "
+                + "differing key sets.\n\tExpected: %s\n\tActual: %s", expectedFields,
+            expectedRecordMap.keySet()));
+      }
+
+      expectedOutput.add(RecordBeanHelper.copyRecordPropertiesIntoNew(expectedFields,
+          RecordBeanHelper.createRecord(expectedRecordMap, topicConfig), topicConfig,
+          RecordBeanHelper.PREFIX_KEY, RecordBeanHelper.PREFIX_VALUE));
+    }
+
+    assertListEquals(expectedOutput, comparableOutput, true);
+  }
+
+  private <K, V> List<KeyValue<K, V>> stripUnnecessaryFields(List<KeyValue<K, V>> records,
+      Set<String> necessaryFields, TopicConfig<K, V> topicConfig) throws Exception {
+
+    // strippedRecords will contain the same records as input, but with only necessary fields populated
+    List<KeyValue<K, V>> strippedRecords = new ArrayList<>();
+    for (KeyValue<K, V> originalRecord : records) {
+      // copy properties from into new records that ONLY have those fields set
+      strippedRecords.add(RecordBeanHelper
+          .copyRecordPropertiesIntoNew(necessaryFields, originalRecord, topicConfig,
+              RecordBeanHelper.PREFIX_KEY, RecordBeanHelper.PREFIX_VALUE));
+    }
+    return strippedRecords;
   }
 
   private void assertListEquals(List<?> expected, List<?> actual,

@@ -51,11 +51,6 @@ public class StreamControllerTest {
 
   @Before
   public void setup() {
-//    driver = new TopologyTestDriver(controller.buildTopology(), properties.asProperties());
-//    tradeFactory = new ConsumerRecordFactory<>(inputTradeTopic.getName(),
-//        inputTradeTopic.getKeySerde().serializer(), inputTradeTopic.getValueSerde().serializer());
-//    securityFactory = new ConsumerRecordFactory<>(securityTopic.getName(),
-//        securityTopic.getKeySerde().serializer(), securityTopic.getValueSerde().serializer());
 
     if (tester == null) {
       tester = new TopologyTester(controller.buildTopology(), properties.asProperties());
@@ -78,11 +73,13 @@ public class StreamControllerTest {
 
     Map<String, String> tradeRecordMap = new HashMap<>();
     tradeRecordMap.put("isin", "isin1");
+    tradeRecordMap.put("qty", "10");
     tester.pipeInput(inputTradeTopic, tradeRecordMap);
 
     Map<String, String> expectedOutput = new HashMap<>();
     expectedOutput.put("securityId", "secId");
-    tester.assertOutput(normalizedTradeTopic, Collections.singletonList(expectedOutput), true);
+//    expectedOutput.put("qty", "10");
+    tester.assertOutputList(normalizedTradeTopic, Collections.singletonList(expectedOutput), true);
   }
 
   @Test
