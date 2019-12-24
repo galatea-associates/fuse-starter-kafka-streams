@@ -3,6 +3,7 @@ package org.galatea.kafka.starter.testing.alias;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
 
 public class AliasHelper {
@@ -13,12 +14,20 @@ public class AliasHelper {
 
     Set<String> keysToRemove = new HashSet<>();
     Map<String, T> entriesToAdd = new HashMap<>();
-    aliasMap.forEach((alias, fullFieldName) -> {
+    for (Entry<String, String> entry : aliasMap.entrySet()) {
+      String alias = entry.getKey();
+      String fullFieldName = entry.getValue();
       if (outputMap.containsKey(alias)) {
         keysToRemove.add(alias);
         entriesToAdd.put(fullFieldName, outputMap.get(alias));
+
+        if (outputMap.containsKey(fullFieldName)) {
+          throw new IllegalArgumentException(String
+              .format("Alias substitution cannot override existing entry for alias %s=>%s", alias,
+                  fullFieldName));
+        }
       }
-    });
+    }
     keysToRemove.forEach(outputMap::remove);
     outputMap.putAll(entriesToAdd);
 
@@ -32,12 +41,14 @@ public class AliasHelper {
     Set<String> entriesToRemove = new HashSet<>();
     Set<String> entriesToAdd = new HashSet<>();
 
-    aliasMap.forEach((alias, fullFieldName) -> {
+    for (Entry<String, String> entry : aliasMap.entrySet()) {
+      String alias = entry.getKey();
+      String fullFieldName = entry.getValue();
       if (outputSet.contains(alias)) {
         entriesToRemove.add(alias);
         entriesToAdd.add(fullFieldName);
       }
-    });
+    }
     entriesToRemove.forEach(outputSet::remove);
     outputSet.addAll(entriesToAdd);
 

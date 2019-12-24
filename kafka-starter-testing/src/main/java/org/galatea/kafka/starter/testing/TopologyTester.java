@@ -2,9 +2,13 @@ package org.galatea.kafka.starter.testing;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.fail;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import static org.unitils.reflectionassert.ReflectionAssert.assertReflectionEquals;
 
 import java.io.File;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -14,11 +18,14 @@ import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.specific.SpecificRecord;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.Serde;
+import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.Topology;
@@ -26,10 +33,12 @@ import org.apache.kafka.streams.TopologyTestDriver;
 import org.apache.kafka.streams.processor.StateStore;
 import org.apache.kafka.streams.state.KeyValueIterator;
 import org.apache.kafka.streams.state.KeyValueStore;
+import org.apache.kafka.streams.state.QueryableStoreType;
 import org.galatea.kafka.starter.messaging.Topic;
 import org.galatea.kafka.starter.testing.alias.AliasHelper;
 import org.galatea.kafka.starter.testing.avro.AvroMessageUtil;
 import org.galatea.kafka.starter.testing.bean.RecordBeanHelper;
+import org.galatea.kafka.starter.testing.conversion.ConversionUtil;
 import org.springframework.util.FileSystemUtils;
 import org.unitils.reflectionassert.ReflectionComparatorMode;
 
@@ -42,17 +51,61 @@ public class TopologyTester {
   private final Map<String, TopicConfig<?, ?>> outputTopicConfig = new HashMap<>();
   private final Map<String, TopicConfig<?, ?>> storeConfig = new HashMap<>();
 
+  public static final LocalDate REF_DATE = LocalDate.of(2020, 1, 1);
+
+  @Getter
+  private final ConversionUtil typeConversionUtil = new ConversionUtil();
+  private final Pattern relativeTDatePattern = Pattern
+      .compile("^\\s*[Tt]\\s*(([+-])\\s*(\\d+)\\s*)?$");
+
+  /**
+   * Use this KafkaStreams object for calling any code that needs to retrieve stores from the
+   * KafkaStreams object
+   */
+  public KafkaStreams mockStreams() {
+    KafkaStreams mockStreams = mock(KafkaStreams.class);
+    when(mockStreams.store(any(String.class), any(QueryableStoreType.class)))
+        .thenAnswer(invocationOnMock -> driver.getStateStore(invocationOnMock.getArgument(0)));
+    return mockStreams;
+  }
+
   public TopologyTester(Topology topology, Properties streamProperties) {
     String stateDir = streamProperties.getProperty(StreamsConfig.STATE_DIR_CONFIG);
     File dirFile = new File(stateDir);
-    if (dirFile.exists()) {
-      log.info("Able to delete state dir before testing: {}",
-          FileSystemUtils.deleteRecursively(dirFile));
+    if (dirFile.exists() && !FileSystemUtils.deleteRecursively(dirFile)) {
+      log.error("Was unable to delete state dir before tests: {}", stateDir);
     }
     driver = new TopologyTestDriver(topology, streamProperties);
+
+    typeConversionUtil.registerTypeConversion(LocalDate.class, Pattern.compile("^\\d+$"),
+        stringValue -> LocalDate.ofEpochDay(Long.parseLong(stringValue)));
+    typeConversionUtil.registerTypeConversion(LocalDate.class, relativeTDatePattern,
+        tDateString -> {
+          Matcher matcher = relativeTDatePattern.matcher(tDateString);
+          if (!matcher.find()) {
+            throw new IllegalStateException(
+                "Registered pattern does not match used pattern for type conversion");
+          }
+
+          if (matcher.group(1) != null) {
+            String plusMinus = matcher.group(2);
+            long numDays = Long.parseLong(matcher.group(3));
+            if (plusMinus.equals("+")) {
+              return REF_DATE.plusDays(numDays);
+            } else if (plusMinus.equals("-")) {
+              return REF_DATE.minusDays(numDays);
+            } else {
+              throw new IllegalArgumentException(
+                  "Group 2 of regex expected to be either '+' or '-'");
+            }
+          }
+          return REF_DATE;
+        });
   }
 
   public void beforeTest() {
+    outputTopicConfig.forEach((topicName, topicConfig) -> readOutput(topicConfig));
+
     for (Entry<String, StateStore> e : driver.getAllStateStores().entrySet()) {
       String storeName = e.getKey();
       StateStore store = e.getValue();
@@ -65,6 +118,25 @@ public class TopologyTester {
         }
       }
     }
+  }
+
+  public <K, V> void purgeMessagesInOutput(Topic<K, V> topic) {
+    readOutput(outputTopicConfig(topic));
+  }
+
+  @SuppressWarnings("unchecked")
+  public <K, V> TopicConfig<K, V> getInputConfig(Topic<K, V> topic) {
+    return (TopicConfig) inputTopicConfig.get(topic.getName());
+  }
+
+  @SuppressWarnings("unchecked")
+  public <K, V> TopicConfig<K, V> getOutputConfig(Topic<K, V> topic) {
+    return (TopicConfig) outputTopicConfig.get(topic.getName());
+  }
+
+  @SuppressWarnings("unchecked")
+  public <K, V> TopicConfig<K, V> getStoreConfig(String storeName) {
+    return (TopicConfig) storeConfig.get(storeName);
   }
 
   public <K, V> void configureInputTopic(Topic<K, V> topic,
@@ -97,7 +169,7 @@ public class TopologyTester {
   public <K, V> void pipeInput(Topic<K, V> topic, Map<String, String> fieldMap) throws Exception {
     TopicConfig<K, V> topicConfig = inputTopicConfig(topic);
 
-    KeyValue<K, V> record = RecordBeanHelper.createRecord(fieldMap, topicConfig);
+    KeyValue<K, V> record = RecordBeanHelper.createRecord(typeConversionUtil, fieldMap, topicConfig);
     AvroMessageUtil.defaultUtil().populateRequiredFieldsWithDefaults((SpecificRecord) record.key);
     AvroMessageUtil.defaultUtil().populateRequiredFieldsWithDefaults((SpecificRecord) record.value);
 
@@ -132,8 +204,8 @@ public class TopologyTester {
       }
 
       expectedOutput.add(RecordBeanHelper.copyRecordPropertiesIntoNew(expectedFields,
-          RecordBeanHelper.createRecord(expectedRecordMap, topicConfig), topicConfig,
-          RecordBeanHelper.PREFIX_KEY, RecordBeanHelper.PREFIX_VALUE));
+          RecordBeanHelper.createRecord(typeConversionUtil, expectedRecordMap, topicConfig),
+          topicConfig));
     }
 
     assertListEquals(expectedOutput, comparableActualOutput, lenientOrder);
@@ -144,12 +216,12 @@ public class TopologyTester {
     TopicConfig<K, V> topicConfig = outputTopicConfig(topic);
 
     List<KeyValue<K, V>> output = readOutput(topicConfig);
-    Map<K,V> outputMap = new HashMap<>();
+    Map<K, V> outputMap = new HashMap<>();
     for (KeyValue<K, V> outputRecord : output) {
       outputMap.put(outputRecord.key, outputRecord.value);
     }
 
-    List<KeyValue<K,V>> reducedOutput = new ArrayList<>();
+    List<KeyValue<K, V>> reducedOutput = new ArrayList<>();
     outputMap.forEach((key, value) -> reducedOutput.add(new KeyValue<>(key, value)));
 
     if (!output.isEmpty()) {
@@ -171,8 +243,8 @@ public class TopologyTester {
       }
 
       expectedOutput.add(RecordBeanHelper.copyRecordPropertiesIntoNew(expectedFields,
-          RecordBeanHelper.createRecord(expectedRecordMap, topicConfig), topicConfig,
-          RecordBeanHelper.PREFIX_KEY, RecordBeanHelper.PREFIX_VALUE));
+          RecordBeanHelper.createRecord(typeConversionUtil, expectedRecordMap, topicConfig),
+          topicConfig));
     }
 
     assertListEquals(expectedOutput, comparableOutput, true);
@@ -186,8 +258,8 @@ public class TopologyTester {
     for (KeyValue<K, V> originalRecord : records) {
       // copy properties from into new records that ONLY have those fields set
       strippedRecords.add(RecordBeanHelper
-          .copyRecordPropertiesIntoNew(necessaryFields, originalRecord, topicConfig,
-              RecordBeanHelper.PREFIX_KEY, RecordBeanHelper.PREFIX_VALUE));
+          .copyRecordPropertiesIntoNew(necessaryFields, originalRecord, topicConfig
+          ));
     }
     return strippedRecords;
   }
@@ -262,20 +334,5 @@ public class TopologyTester {
     }
     return (TopicConfig<K, V>) topicConfig;
   }
-
-//  public void test() throws Exception {
-//
-//    TopicConfig<TradeMsgKey, TestMsg> topicConfig = new TopicConfig<>(TradeMsgKey::new,
-//        TestMsg::new);
-//
-//    Map<String, String> fieldMap = new HashMap<>();
-//    fieldMap.put("tradeId", "100d");
-//    fieldMap.put("value.nonNullableTimestamp", "2019-12-20T10:43:00.000Z");
-//    fieldMap.put("nonNullableDate", "2019-12-20");
-//
-//    KeyValue<TradeMsgKey, TestMsg> record = RecordBeanHelper.createRecord(fieldMap, topicConfig);
-//    log.info("Record: {}", record);
-//  }
-
 
 }

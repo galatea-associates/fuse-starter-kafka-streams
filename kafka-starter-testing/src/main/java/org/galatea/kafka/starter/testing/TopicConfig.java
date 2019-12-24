@@ -20,6 +20,7 @@ public class TopicConfig<K, V> {
   private final Callable<V> createEmptyValue;
   private final Map<String, String> aliases = new HashMap<>();
   private final Map<String, Function<String, Object>> conversions = new HashMap<>();
+  private final Map<String, String> defaultValues = new HashMap<>();
   private ConsumerRecordFactory<K, V> factory = null;
 
   public void registerConversion(String onField, Function<String, Object> conversion) {

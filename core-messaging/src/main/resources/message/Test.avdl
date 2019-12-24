@@ -11,7 +11,8 @@ protocol Simple {
     TestEnum nonNullableEnum;
   }
 
-  record TestMsg {
+  record TestMsgValue {
+
     union{null, map<TestSubMsg>} nullableMapField;
     union{null, array<TestSubMsg>} nullableArrayField;
     map<TestSubMsg> nonNullableMapField;
@@ -23,6 +24,15 @@ protocol Simple {
     union{null, string} nullableStringField;
     timestamp_ms nonNullableTimestamp;
     date nonNullableDate;
+
+    double doubleField;
+    TestEnum nonNullableEnum;
+  }
+
+  record TestMsgKey {
+    double keyValue;
+    double doubleField;
+    TestEnum nonNullableEnum;
   }
 
 }

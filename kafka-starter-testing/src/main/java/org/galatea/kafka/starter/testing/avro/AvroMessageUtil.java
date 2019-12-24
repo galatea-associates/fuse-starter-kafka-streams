@@ -78,9 +78,18 @@ public class AvroMessageUtil {
     LogicalType logicalType = fieldLogicalType(field.schema());
     Type primitiveType = fieldPrimitiveType(field.schema());
 
+    if (field.hasDefaultValue()) {
+      message.put(field.pos(), field.defaultVal());
+      return;
+    }
+
     AvroFieldType fieldType;
     if (logicalType != null) {
       fieldType = LOGICAL_TYPES.get(logicalType);
+      if (fieldType == null) {
+        throw new IllegalStateException(String.format("Logical type %s does not have a "
+            + "registered default", logicalType));
+      }
       message.put(field.pos(), fieldType.defaultValue());
     } else if (primitiveType.equals(Type.RECORD)) {
       Object newRecord = Class.forName(field.schema().getFullName()).newInstance();
@@ -88,6 +97,10 @@ public class AvroMessageUtil {
       message.put(field.pos(), newRecord);
     } else {
       fieldType = PRIMITIVE_TYPES.get(primitiveType);
+      if (fieldType == null) {
+        throw new IllegalStateException(String.format("Primitive type %s does not have a "
+            + "registered default", primitiveType));
+      }
       if (fieldType.getClass().equals(AvroEnumType.class)) {
         message.put(field.pos(), fieldType
             .defaultValue(field.schema().getFullName(), field.schema().getEnumSymbols().get(0)));

@@ -10,18 +10,21 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.function.Function;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.specific.SpecificRecord;
 import org.apache.kafka.streams.KeyValue;
 import org.galatea.kafka.starter.testing.TopicConfig;
 import org.galatea.kafka.starter.testing.alias.AliasHelper;
 import org.galatea.kafka.starter.testing.avro.AvroMessageUtil;
-import org.galatea.kafka.starter.testing.conversion.ConversionHelper;
+import org.galatea.kafka.starter.testing.conversion.ConversionUtil;
 import org.galatea.kafka.starter.testing.editor.InstantEditor;
 import org.galatea.kafka.starter.testing.editor.LocalDateEditor;
 import org.galatea.kafka.starter.testing.editor.LocalTimeEditor;
 import org.springframework.beans.BeanWrapper;
 import org.springframework.beans.BeanWrapperImpl;
+import org.springframework.beans.TypeMismatchException;
 
+@Slf4j
 public class RecordBeanHelper {
 
   public static final String PREFIX_KEY = "KEY.";
@@ -37,13 +40,12 @@ public class RecordBeanHelper {
    * @throws Exception upon exception thrown in {@link TopicConfig#createKey()} or {@link
    * TopicConfig#createValue()}
    */
-  public static <K, V> KeyValue<K, V> createRecord(Map<String, String> fields,
-      TopicConfig<K, V> topicConfig) throws Exception {
+  public static <K, V> KeyValue<K, V> createRecord(ConversionUtil conversionUtil,
+      Map<String, String> fields, TopicConfig<K, V> topicConfig) throws Exception {
 
     Set<String> fieldsUsed = new HashSet<>();
-    K key = RecordBeanHelper.createKey(fields, topicConfig, fieldsUsed, PREFIX_KEY, PREFIX_VALUE);
-    V value = RecordBeanHelper
-        .createValue(fields, topicConfig, fieldsUsed, PREFIX_KEY, PREFIX_VALUE);
+    K key = RecordBeanHelper.createKey(conversionUtil, fields, topicConfig, fieldsUsed);
+    V value = RecordBeanHelper.createValue(conversionUtil, fields, topicConfig, fieldsUsed);
 
     Map<String, String> expandedFieldMap = AliasHelper
         .expandAliasKeys(fields, topicConfig.getAliases());
@@ -67,27 +69,24 @@ public class RecordBeanHelper {
    * @param fieldsToCopy set of fields (aliases or fully-qualified) to copy from source object
    * @param originalRecord record to copy fields from
    * @param topicConfig configuration containing aliases to use
-   * @param keyPrefix prefix on fully-qualified fields to indicate the property is key-specific
-   * @param valuePrefix prefix on fully-qualified fields to indicate the property is value-specific
    * @return new record with only specified properties copied from originalRecord
    * @throws Exception upon exception thrown in {@link TopicConfig#createKey()} or {@link
    * TopicConfig#createValue()}
    */
   public static <K, V> KeyValue<K, V> copyRecordPropertiesIntoNew(Set<String> fieldsToCopy,
-      KeyValue<K, V> originalRecord, TopicConfig<K, V> topicConfig, String keyPrefix,
-      String valuePrefix) throws Exception {
+      KeyValue<K, V> originalRecord, TopicConfig<K, V> topicConfig) throws Exception {
 
-    HashSet<String> uncopiedFields = new HashSet<>(fieldsToCopy);
     fieldsToCopy = AliasHelper.expandAliasKeys(fieldsToCopy, topicConfig.getAliases());
+    HashSet<String> uncopiedFields = new HashSet<>(fieldsToCopy);
 
     Set<String> copiedProperties = new HashSet<>();
     K newKey = topicConfig.createKey();
-    copyBeanProperties(fieldsToCopy, originalRecord.key, newKey, copiedProperties, keyPrefix,
-        valuePrefix);
+    copyBeanProperties(fieldsToCopy, originalRecord.key, newKey, copiedProperties, PREFIX_KEY,
+        PREFIX_VALUE);
 
     V newValue = topicConfig.createValue();
-    copyBeanProperties(fieldsToCopy, originalRecord.value, newValue, copiedProperties, valuePrefix,
-        keyPrefix);
+    copyBeanProperties(fieldsToCopy, originalRecord.value, newValue, copiedProperties, PREFIX_VALUE,
+        PREFIX_KEY);
 
     uncopiedFields.removeAll(copiedProperties);
     if (!uncopiedFields.isEmpty()) {
@@ -115,19 +114,20 @@ public class RecordBeanHelper {
    * @param alwaysExcludePrefix prefix that, if present on a fully-qualified-field-name, prevents
    * the inclusion of that field in the copy.
    */
-  public static <T> void copyBeanProperties(Set<String> fieldsToCopy, T source, T destination,
+  private static <T> void copyBeanProperties(Set<String> fieldsToCopy, T source, T destination,
       Set<String> copiedProperties, String maybeIncludePrefix, String alwaysExcludePrefix) {
     BeanWrapper sourceWrap = wrapBean(source);
     BeanWrapper destinationWrap = wrapBean(destination);
 
     for (String fieldToCopy : fieldsToCopy) {
       if (!fieldToCopy.toLowerCase().startsWith(alwaysExcludePrefix.toLowerCase())) {
+        String nonTruncatedFieldToCopy = fieldToCopy;
         if (fieldToCopy.toLowerCase().startsWith(maybeIncludePrefix.toLowerCase())) {
           fieldToCopy = fieldToCopy.substring(maybeIncludePrefix.length());
         }
         if (sourceWrap.isReadableProperty(fieldToCopy)) {
           destinationWrap.setPropertyValue(fieldToCopy, sourceWrap.getPropertyValue(fieldToCopy));
-          copiedProperties.add(fieldToCopy);
+          copiedProperties.add(nonTruncatedFieldToCopy);
         }
       }
     }
@@ -142,20 +142,18 @@ public class RecordBeanHelper {
    * @param topicConfig topic configuration to be used in creation of the key bean
    * @param fieldsUsed set of fields used. Every field set in the new object will add the
    * fully-qualified-field-name to this set
-   * @param keyPrefix field name prefix that, when found, needs to be removed from the
-   * fully-qualified-field-name before attempting to assign property to bean.
-   * @param valuePrefix field name prefix that, when found, given field will be ignored for this
-   * bean.
    * @return key bean with properties assigned
    * @throws Exception upon {@link TopicConfig#createKey()} exception
    */
-  public static <K, V> K createKey(Map<String, String> fields, TopicConfig<K, V> topicConfig,
-      Set<String> fieldsUsed, String keyPrefix, String valuePrefix) throws Exception {
+  private static <K, V> K createKey(ConversionUtil conversionUtil, Map<String, String> fields,
+      TopicConfig<K, V> topicConfig, Set<String> fieldsUsed) throws Exception {
 
     Map<String, Function<String, Object>> conversions = topicConfig.getConversions();
     Map<String, String> aliases = topicConfig.getAliases();
-    K populatedKey = createBeanWithValues(topicConfig.getCreateEmptyKey(), fields, conversions,
-        aliases, fieldsUsed, keyPrefix, valuePrefix);
+    Map<String, String> defaultValues = topicConfig.getDefaultValues();
+    K populatedKey = createBeanWithValues(conversionUtil, topicConfig.getCreateEmptyKey(), fields,
+        conversions, aliases, defaultValues, fieldsUsed, RecordBeanHelper.PREFIX_KEY,
+        RecordBeanHelper.PREFIX_VALUE);
 
     if (Arrays.asList(populatedKey.getClass().getInterfaces()).contains(SpecificRecord.class)) {
       AvroMessageUtil.defaultUtil()
@@ -173,20 +171,18 @@ public class RecordBeanHelper {
    * @param topicConfig topic configuration to be used in creation of value bean
    * @param fieldsUsed set of fields used. Every field set in new object will add the
    * fully-qualified-field-name to this set
-   * @param keyPrefix field name prefix that, when found, given field will be ignored for this
-   * bean.
-   * @param valuePrefix field name prefix that, when found, needs to be removed from
-   * fully-qualified-field-name before attempting to assign property to bean.
    * @return value bean with properties assigned
    * @throws Exception upon {@link TopicConfig#createValue()} exception
    */
-  public static <K, V> V createValue(Map<String, String> fields, TopicConfig<K, V> topicConfig,
-      Set<String> fieldsUsed, String keyPrefix, String valuePrefix) throws Exception {
+  private static <K, V> V createValue(ConversionUtil conversionUtil, Map<String, String> fields,
+      TopicConfig<K, V> topicConfig, Set<String> fieldsUsed) throws Exception {
 
     Map<String, Function<String, Object>> conversions = topicConfig.getConversions();
     Map<String, String> aliases = topicConfig.getAliases();
-    V populatedValue = createBeanWithValues(topicConfig.getCreateEmptyValue(), fields,
-        conversions, aliases, fieldsUsed, valuePrefix, keyPrefix);
+    Map<String, String> defaultValues = topicConfig.getDefaultValues();
+    V populatedValue = createBeanWithValues(conversionUtil, topicConfig.getCreateEmptyValue(),
+        fields, conversions, aliases, defaultValues, fieldsUsed, RecordBeanHelper.PREFIX_VALUE,
+        RecordBeanHelper.PREFIX_KEY);
 
     if (Arrays.asList(populatedValue.getClass().getInterfaces()).contains(SpecificRecord.class)) {
       AvroMessageUtil.defaultUtil()
@@ -212,6 +208,9 @@ public class RecordBeanHelper {
    * RecordBeanHelper#PREFIX_KEY} or {@link RecordBeanHelper#PREFIX_VALUE} if the field should only
    * set the value in either key or value but not both (if key and value have identically named
    * field).
+   * @param defaultValues map of {@code (fully-qualified-field-name|alias) -> (String)
+   * defaultValue}. If field map does not contain a field, fall back to value in this map if
+   * exists.
    * @param fieldsUsed Set of fields that contains the fully-qualified-field-names of all the fields
    * utilized when setting field values in the bean. This set is updated in-place.
    * @param maybeIncludePrefix prefix that may be in front of fully-qualified-field-names that will
@@ -220,18 +219,33 @@ public class RecordBeanHelper {
    * the inclusion of that field in the bean.
    * @return modified bean.
    */
-  public static <T> T createBeanWithValues(Callable<T> createBeanMethod,
-      Map<String, String> fields, Map<String, Function<String, Object>> conversions,
-      Map<String, String> aliases, Set<String> fieldsUsed, String maybeIncludePrefix,
+  private static <T> T createBeanWithValues(ConversionUtil conversionUtil,
+      Callable<T> createBeanMethod, Map<String, String> fields,
+      Map<String, Function<String, Object>> conversions, Map<String, String> aliases,
+      Map<String, String> defaultValues, Set<String> fieldsUsed, String maybeIncludePrefix,
       String alwaysExcludePrefix)
       throws Exception {
 
     conversions = AliasHelper.expandAliasKeys(conversions, aliases);
+    defaultValues = AliasHelper.expandAliasKeys(defaultValues, aliases);
+    fields = AliasHelper.expandAliasKeys(fields, aliases);
     BeanWrapper wrappedObj = wrapBean(createBeanMethod.call());
 
-    Map<String, String> fieldMapExpanded = AliasHelper.expandAliasKeys(fields, aliases);
+    setFieldsInBean(wrappedObj, defaultValues, conversionUtil, conversions, alwaysExcludePrefix,
+        maybeIncludePrefix);
 
-    for (Entry<String, String> entry : fieldMapExpanded.entrySet()) {
+    Set<String> fieldsSet = setFieldsInBean(wrappedObj, fields, conversionUtil, conversions,
+        alwaysExcludePrefix, maybeIncludePrefix);
+    fieldsUsed.addAll(fieldsSet);
+    return (T) wrappedObj.getWrappedInstance();
+  }
+
+  private static Set<String> setFieldsInBean(BeanWrapper wrappedObj,
+      Map<String, String> defaultValues,
+      ConversionUtil conversionUtil, Map<String, Function<String, Object>> conversions,
+      String alwaysExcludePrefix, String maybeIncludePrefix) {
+    Set<String> fieldsUsed = new HashSet<>();
+    for (Entry<String, String> entry : defaultValues.entrySet()) {
       String fullFieldPath = entry.getKey();
       String fieldValue = entry.getValue();
 
@@ -241,15 +255,38 @@ public class RecordBeanHelper {
           fieldPathWithoutPrefix = fullFieldPath.substring(maybeIncludePrefix.length());
         }
 
-        if (wrappedObj.isReadableProperty(fieldPathWithoutPrefix)) {
-          wrappedObj.setPropertyValue(fieldPathWithoutPrefix,
-              ConversionHelper.maybeConvert(fieldPathWithoutPrefix, fieldValue, conversions));
+        if (trySetField(wrappedObj, fieldPathWithoutPrefix, fieldValue, conversionUtil,
+            conversions)) {
           fieldsUsed.add(fullFieldPath);
         }
       }
-
     }
-    return (T) wrappedObj.getWrappedInstance();
+    return fieldsUsed;
+  }
+
+  private static boolean trySetField(BeanWrapper wrappedBean, String fieldPath, String value,
+      ConversionUtil conversionUtil, Map<String, Function<String, Object>> conversions) {
+
+    if (wrappedBean.isReadableProperty(fieldPath)) {
+      Object valueToApply;
+      if (ConversionUtil.hasFieldConversionMethod(fieldPath, conversions)) {
+        valueToApply = ConversionUtil
+            .convertFieldValue(fieldPath, value, conversions);
+      } else {
+        valueToApply = conversionUtil
+            .maybeUseTypeConversion(wrappedBean.getPropertyType(fieldPath),
+                value);
+      }
+      try {
+        wrappedBean.setPropertyValue(fieldPath, valueToApply);
+      } catch (TypeMismatchException e) {
+        throw new IllegalArgumentException(String
+            .format("Could not convert value %s to type %s for field %s", valueToApply,
+                wrappedBean.getPropertyType(fieldPath), fieldPath), e);
+      }
+      return true;
+    }
+    return false;
   }
 
   /**
