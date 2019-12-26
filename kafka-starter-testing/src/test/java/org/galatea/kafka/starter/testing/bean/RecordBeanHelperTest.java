@@ -2,6 +2,9 @@ package org.galatea.kafka.starter.testing.bean;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.Mockito.mock;
 
@@ -10,6 +13,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.serialization.Serde;
@@ -263,5 +267,77 @@ public class RecordBeanHelperTest {
         0.00001);
   }
 
-  // TODO: tests around default values set in topicConfig
+  @Test
+  @SneakyThrows
+  public void createRecord_nullableFieldDefaultNull() {
+    Map<String, String> fieldMap = new HashMap<>();
+
+    KeyValue<TestMsgKey, TestMsgValue> record = RecordBeanHelper
+        .createRecord(conversionUtil, fieldMap, topicConfig);
+
+    assertNull(record.value.getNullableStringField());
+  }
+
+  @Test
+  @SneakyThrows
+  public void createRecord_nonNullableFieldDefault() {
+    Map<String, String> fieldMap = new HashMap<>();
+
+    KeyValue<TestMsgKey, TestMsgValue> record = RecordBeanHelper
+        .createRecord(conversionUtil, fieldMap, topicConfig);
+
+    assertNotNull(record.value.getNonNullableStringField());
+    assertTrue(record.value.getNonNullableStringField().isEmpty());
+  }
+
+  @Test
+  @SneakyThrows
+  public void createRecord_definedFieldDefault() {
+    Map<String, String> fieldMap = new HashMap<>();
+    String defaultValue = "defValue";
+    topicConfig.getDefaultValues().put("nullableStringField", defaultValue);
+    topicConfig.getDefaultValues().put("nonNullableStringField", defaultValue);
+
+    KeyValue<TestMsgKey, TestMsgValue> record = RecordBeanHelper
+        .createRecord(conversionUtil, fieldMap, topicConfig);
+
+    assertEquals(defaultValue, record.value.getNullableStringField());
+    assertEquals(defaultValue, record.value.getNonNullableStringField());
+  }
+
+  @Test
+  @SneakyThrows
+  public void createRecord_definedFieldDefaultConvertedUsingConversion() {
+    Map<String, String> fieldMap = new HashMap<>();
+    String defaultValue = "defValue";
+    String fieldName = "nonNullableStringField";
+    Function<String, Object> conversionFunction = stringValue -> stringValue.toLowerCase()
+        + stringValue.toUpperCase();
+
+    topicConfig.getDefaultValues().put(fieldName, defaultValue);
+    topicConfig.getConversions().put(fieldName, conversionFunction);
+
+    KeyValue<TestMsgKey, TestMsgValue> record = RecordBeanHelper
+        .createRecord(conversionUtil, fieldMap, topicConfig);
+
+    assertEquals(conversionFunction.apply(defaultValue), record.value.getNonNullableStringField());
+  }
+
+  @Test
+  @SneakyThrows
+  public void createRecord_aliasDefinedFieldDefault() {
+    Map<String, String> fieldMap = new HashMap<>();
+    String defaultValue = "defValue";
+    String fieldAlias = "fieldAlias";
+    String fieldName = "nonNullableStringField";
+
+    topicConfig.getDefaultValues().put(fieldAlias, defaultValue);
+    topicConfig.getAliases().put(fieldAlias, fieldName);
+
+    KeyValue<TestMsgKey, TestMsgValue> record = RecordBeanHelper
+        .createRecord(conversionUtil, fieldMap, topicConfig);
+
+    assertEquals(defaultValue, record.value.getNonNullableStringField());
+  }
+
 }
