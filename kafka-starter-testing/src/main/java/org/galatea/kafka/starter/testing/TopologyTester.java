@@ -10,8 +10,11 @@ import static org.unitils.reflectionassert.ReflectionAssert.assertReflectionEqua
 import java.io.File;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -50,6 +53,8 @@ public class TopologyTester {
   private final Map<String, TopicConfig<?, ?>> inputTopicConfig = new HashMap<>();
   private final Map<String, TopicConfig<?, ?>> outputTopicConfig = new HashMap<>();
   private final Map<String, TopicConfig<?, ?>> storeConfig = new HashMap<>();
+  private final Set<Class<?>> beanClasses = new HashSet<>();
+  private final Set<Class<?>> avroClasses = new HashSet<>();
 
   public static final LocalDate REF_DATE = LocalDate.of(2020, 1, 1);
 
@@ -101,6 +106,22 @@ public class TopologyTester {
           }
           return REF_DATE;
         });
+  }
+
+  /**
+   * Register class/interface to be treated as a bean. If not registered, the class will be created
+   * using the string constructor if it exists.
+   */
+  public void registerBeanClass(Class<?> beanClassOrInterface) {
+    beanClasses.add(beanClassOrInterface);
+  }
+
+  /**
+   * Register class/interface to be treated as an avro class. These classes should also be
+   * registered as beans for correct operation
+   */
+  public void registerAvroClass(Class<?> avroClassOrInterface) {
+    avroClasses.add(avroClassOrInterface);
   }
 
   public void beforeTest() {
@@ -169,11 +190,56 @@ public class TopologyTester {
   public <K, V> void pipeInput(Topic<K, V> topic, Map<String, String> fieldMap) throws Exception {
     TopicConfig<K, V> topicConfig = inputTopicConfig(topic);
 
-    KeyValue<K, V> record = RecordBeanHelper.createRecord(typeConversionUtil, fieldMap, topicConfig);
-    AvroMessageUtil.defaultUtil().populateRequiredFieldsWithDefaults((SpecificRecord) record.key);
-    AvroMessageUtil.defaultUtil().populateRequiredFieldsWithDefaults((SpecificRecord) record.value);
+    boolean keyIsBean = keyIsBean(topicConfig);
+    boolean valueIsBean = valueIsBean(topicConfig);
+    boolean keyIsAvro = keyIsAvro(topicConfig);
+    boolean valueIsAvro = valueIsAvro(topicConfig);
+
+    KeyValue<K, V> record = RecordBeanHelper
+        .createRecord(typeConversionUtil, fieldMap, topicConfig, keyIsBean, valueIsBean);
+
+    if (keyIsAvro) {
+      AvroMessageUtil.defaultUtil().populateRequiredFieldsWithDefaults((SpecificRecord) record.key);
+    }
+    if (valueIsAvro) {
+      AvroMessageUtil.defaultUtil()
+          .populateRequiredFieldsWithDefaults((SpecificRecord) record.value);
+    }
 
     driver.pipeInput(topicConfig.factory().create(Collections.singletonList(record)));
+  }
+
+  private <V, K> boolean valueIsAvro(TopicConfig<K, V> topicConfig) throws Exception {
+    Class<?> objClass = topicConfig.createValue().getClass();
+    return avroClasses.contains(objClass) || collectionContainsAny(avroClasses,
+        Arrays.asList(objClass.getInterfaces()));
+  }
+
+  private <V, K> boolean keyIsAvro(TopicConfig<K, V> topicConfig) throws Exception {
+    Class<?> objClass = topicConfig.createKey().getClass();
+    return avroClasses.contains(objClass) || collectionContainsAny(avroClasses,
+        Arrays.asList(objClass.getInterfaces()));
+  }
+
+  private <V, K> boolean keyIsBean(TopicConfig<K, V> topicConfig) throws Exception {
+    Class<?> keyClass = topicConfig.createKey().getClass();
+    return beanClasses.contains(keyClass) || collectionContainsAny(beanClasses,
+        Arrays.asList(keyClass.getInterfaces()));
+  }
+
+  private <V, K> boolean valueIsBean(TopicConfig<K, V> topicConfig) throws Exception {
+    Class<?> valueClass = topicConfig.createValue().getClass();
+    return beanClasses.contains(valueClass) || collectionContainsAny(beanClasses,
+        Arrays.asList(valueClass.getInterfaces()));
+  }
+
+  public static <T> boolean collectionContainsAny(Set<T> set, Collection<T> contains) {
+    for (T contain : contains) {
+      if (set.contains(contain)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -203,9 +269,14 @@ public class TopologyTester {
             expectedRecordMap.keySet()));
       }
 
+      boolean keyIsBean = keyIsBean(topicConfig);
+      boolean valueIsBean = valueIsBean(topicConfig);
+
       expectedOutput.add(RecordBeanHelper.copyRecordPropertiesIntoNew(expectedFields,
-          RecordBeanHelper.createRecord(typeConversionUtil, expectedRecordMap, topicConfig),
-          topicConfig));
+          RecordBeanHelper
+              .createRecord(typeConversionUtil, expectedRecordMap, topicConfig, keyIsBean,
+                  valueIsBean),
+          topicConfig, keyIsBean, valueIsBean));
     }
 
     assertListEquals(expectedOutput, comparableActualOutput, lenientOrder);
@@ -242,13 +313,20 @@ public class TopologyTester {
             expectedRecordMap.keySet()));
       }
 
+      boolean keyIsBean = keyIsBean(topicConfig);
+      boolean valueIsBean = valueIsBean(topicConfig);
       expectedOutput.add(RecordBeanHelper.copyRecordPropertiesIntoNew(expectedFields,
-          RecordBeanHelper.createRecord(typeConversionUtil, expectedRecordMap, topicConfig),
-          topicConfig));
+          RecordBeanHelper.createRecord(typeConversionUtil, expectedRecordMap, topicConfig,
+              keyIsBean, valueIsBean),
+          topicConfig, keyIsBean, valueIsBean));
     }
 
     assertListEquals(expectedOutput, comparableOutput, true);
   }
+
+  // TODO: add assertStoreContains method
+
+  // TODO: add assertStoreNotContain method
 
   private <K, V> List<KeyValue<K, V>> stripUnnecessaryFields(List<KeyValue<K, V>> records,
       Set<String> necessaryFields, TopicConfig<K, V> topicConfig) throws Exception {
@@ -257,9 +335,12 @@ public class TopologyTester {
     List<KeyValue<K, V>> strippedRecords = new ArrayList<>();
     for (KeyValue<K, V> originalRecord : records) {
       // copy properties from into new records that ONLY have those fields set
+
+      boolean keyIsBean = keyIsBean(topicConfig);
+      boolean valueIsBean = valueIsBean(topicConfig);
       strippedRecords.add(RecordBeanHelper
-          .copyRecordPropertiesIntoNew(necessaryFields, originalRecord, topicConfig
-          ));
+          .copyRecordPropertiesIntoNew(necessaryFields, originalRecord, topicConfig,
+              keyIsBean, valueIsBean));
     }
     return strippedRecords;
   }

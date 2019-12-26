@@ -17,6 +17,7 @@ import java.util.function.Function;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.serialization.Serde;
+import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.KeyValue;
 import org.galatea.kafka.starter.messaging.test.TestMsgKey;
 import org.galatea.kafka.starter.messaging.test.TestMsgValue;
@@ -29,25 +30,28 @@ import org.junit.Test;
 public class RecordBeanHelperTest {
 
   private ConversionUtil conversionUtil = new ConversionUtil();
-  private TopicConfig<TestMsgKey, TestMsgValue> topicConfig;
+  private TopicConfig<TestMsgKey, TestMsgValue> beanTopicConfig;
+  private TopicConfig<String, String> primitiveTopicConfig;
 
   @Before
   public void setup() {
     Serde<TestMsgKey> mockKeySerde = mock(Serde.class);
     Serde<TestMsgValue> mockValueSerde = mock(Serde.class);
 
-    topicConfig = new TopicConfig<>("testTopic", mockKeySerde, mockValueSerde, TestMsgKey::new,
+    beanTopicConfig = new TopicConfig<>("testTopic", mockKeySerde, mockValueSerde, TestMsgKey::new,
         TestMsgValue::new);
+    primitiveTopicConfig = new TopicConfig<>("testTopic2", Serdes.String(), Serdes.String(),
+        String::new, String::new);
   }
 
   @Test
   @SneakyThrows
-  public void createRecord_keyAndValueCreated() {
+  public void createBeanRecord_keyAndValueCreated() {
     Map<String, String> fieldMap = new HashMap<>();
     fieldMap.put("keyValue", "123");
 
     KeyValue<TestMsgKey, TestMsgValue> record = RecordBeanHelper
-        .createRecord(conversionUtil, fieldMap, topicConfig);
+        .createRecord(conversionUtil, fieldMap, beanTopicConfig, true, true);
 
     assertEquals(TestMsgKey.class, record.key.getClass());
     assertEquals(TestMsgValue.class, record.value.getClass());
@@ -55,18 +59,32 @@ public class RecordBeanHelperTest {
 
   @Test
   @SneakyThrows
-  public void createRecord_aliasSubstitution() {
+  public void createPrimitiveRecord_keyAndValueCreated() {
+    Map<String, String> fieldMap = new HashMap<>();
+    fieldMap.put("KEY", "123");
+    fieldMap.put("VALUE", "1234");
+
+    KeyValue<String, String> record = RecordBeanHelper
+        .createRecord(conversionUtil, fieldMap, primitiveTopicConfig, false, false);
+
+    assertEquals(String.class, record.key.getClass());
+    assertEquals(String.class, record.value.getClass());
+  }
+
+  @Test
+  @SneakyThrows
+  public void createBeanRecord_aliasSubstitution() {
     Map<String, String> fieldMap = new HashMap<>();
     String alias = "alias1";
     String fullyQualifiedField = "doubleField";
-    topicConfig.getAliases().put(alias, fullyQualifiedField);
+    beanTopicConfig.getAliases().put(alias, fullyQualifiedField);
 
     String stringValue = "123";
     double expectedValue = 123;
     fieldMap.put(alias, stringValue);
 
     KeyValue<TestMsgKey, TestMsgValue> record = RecordBeanHelper
-        .createRecord(conversionUtil, fieldMap, topicConfig);
+        .createRecord(conversionUtil, fieldMap, beanTopicConfig, true, true);
 
     assertEquals(expectedValue, record.key.getDoubleField(), 0.0001);
     assertEquals(expectedValue, record.value.getDoubleField(), 0.0001);
@@ -74,11 +92,11 @@ public class RecordBeanHelperTest {
 
   @Test
   @SneakyThrows
-  public void createRecord_fieldConversion() {
+  public void createBeanRecord_fieldConversion() {
     Map<String, String> fieldMap = new HashMap<>();
     String fullyQualifiedField = "doubleField";
 
-    topicConfig.getConversions()
+    beanTopicConfig.getConversions()
         .put(fullyQualifiedField, stringValue -> Double.parseDouble(stringValue.replace("_", "")));
 
     String stringValue = "_123_";
@@ -86,7 +104,7 @@ public class RecordBeanHelperTest {
     fieldMap.put(fullyQualifiedField, stringValue);
 
     KeyValue<TestMsgKey, TestMsgValue> record = RecordBeanHelper
-        .createRecord(conversionUtil, fieldMap, topicConfig);
+        .createRecord(conversionUtil, fieldMap, beanTopicConfig, true, true);
 
     assertEquals(expectedValue, record.key.getDoubleField(), 0.0001);
     assertEquals(expectedValue, record.value.getDoubleField(), 0.0001);
@@ -94,12 +112,12 @@ public class RecordBeanHelperTest {
 
   @Test
   @SneakyThrows
-  public void createRecord_fieldConversionAliases() {
+  public void createBeanRecord_fieldConversionAliases() {
     Map<String, String> fieldMap = new HashMap<>();
     String alias = "alias1";
     String fullyQualifiedField = "doubleField";
-    topicConfig.getAliases().put(alias, fullyQualifiedField);
-    topicConfig.getConversions()
+    beanTopicConfig.getAliases().put(alias, fullyQualifiedField);
+    beanTopicConfig.getConversions()
         .put(alias, stringValue -> Double.parseDouble(stringValue.replace("_", "")));
 
     String stringValue = "_123_";
@@ -107,7 +125,7 @@ public class RecordBeanHelperTest {
     fieldMap.put(alias, stringValue);
 
     KeyValue<TestMsgKey, TestMsgValue> record = RecordBeanHelper
-        .createRecord(conversionUtil, fieldMap, topicConfig);
+        .createRecord(conversionUtil, fieldMap, beanTopicConfig, true, true);
 
     assertEquals(expectedValue, record.key.getDoubleField(), 0.0001);
     assertEquals(expectedValue, record.value.getDoubleField(), 0.0001);
@@ -115,21 +133,34 @@ public class RecordBeanHelperTest {
 
   @Test(expected = IllegalArgumentException.class)
   @SneakyThrows
-  public void createRecord_allFieldsUsed() {
+  public void createBeanRecord_allFieldsUsed() {
     Map<String, String> fieldMap = new HashMap<>();
     String fullyQualifiedField = "doubleField";
     String stringValue = "123";
     fieldMap.put(fullyQualifiedField, stringValue);
     fieldMap.put("nonExistentField", "someValue");
 
-    RecordBeanHelper.createRecord(conversionUtil, fieldMap, topicConfig);
+    RecordBeanHelper.createRecord(conversionUtil, fieldMap, beanTopicConfig, true, true);
+
+    fail();
+  }
+
+  @Test(expected = IllegalArgumentException.class)
+  @SneakyThrows
+  public void createPrimitiveRecord_allFieldsUsed() {
+    Map<String, String> fieldMap = new HashMap<>();
+    fieldMap.put("KEY", "123");
+    fieldMap.put("VALUE", "1234");
+    fieldMap.put("nonExistentField", "someValue");
+
+    RecordBeanHelper.createRecord(conversionUtil, fieldMap, primitiveTopicConfig, false, false);
 
     fail();
   }
 
   @Test
   @SneakyThrows
-  public void createRecord_keyPrefixExclusion() {
+  public void createBeanRecord_keyPrefixExclusion() {
     Map<String, String> fieldMap = new HashMap<>();
     String fullyQualifiedField = "key.doubleField";
 
@@ -138,7 +169,7 @@ public class RecordBeanHelperTest {
     fieldMap.put(fullyQualifiedField, stringValue);
 
     KeyValue<TestMsgKey, TestMsgValue> record = RecordBeanHelper
-        .createRecord(conversionUtil, fieldMap, topicConfig);
+        .createRecord(conversionUtil, fieldMap, beanTopicConfig, true, true);
 
     assertEquals(expectedValue, record.key.getDoubleField(), 0.0001);
     assertNotEquals(expectedValue, record.value.getDoubleField(), 0.0001);
@@ -146,7 +177,7 @@ public class RecordBeanHelperTest {
 
   @Test
   @SneakyThrows
-  public void createRecord_valuePrefixExclusion() {
+  public void createBeanRecord_valuePrefixExclusion() {
     Map<String, String> fieldMap = new HashMap<>();
     String fullyQualifiedField = "value.doubleField";
 
@@ -155,7 +186,7 @@ public class RecordBeanHelperTest {
     fieldMap.put(fullyQualifiedField, stringValue);
 
     KeyValue<TestMsgKey, TestMsgValue> record = RecordBeanHelper
-        .createRecord(conversionUtil, fieldMap, topicConfig);
+        .createRecord(conversionUtil, fieldMap, beanTopicConfig, true, true);
 
     assertNotEquals(expectedValue, record.key.getDoubleField(), 0.0001);
     assertEquals(expectedValue, record.value.getDoubleField(), 0.0001);
@@ -163,14 +194,14 @@ public class RecordBeanHelperTest {
 
   @Test(expected = IllegalArgumentException.class)
   @SneakyThrows
-  public void createRecord_unparseableStrings() {
+  public void createBeanRecord_unparseableStrings() {
     Map<String, String> fieldMap = new HashMap<>();
     String fullyQualifiedField = "doubleField";
 
     String stringValue = "_123_";
     fieldMap.put(fullyQualifiedField, stringValue);
 
-    RecordBeanHelper.createRecord(conversionUtil, fieldMap, topicConfig);
+    RecordBeanHelper.createRecord(conversionUtil, fieldMap, beanTopicConfig, true, true);
 
     fail();
   }
@@ -181,18 +212,18 @@ public class RecordBeanHelperTest {
     Set<String> fieldsToCopy = new HashSet<>();
 
     KeyValue<TestMsgKey, TestMsgValue> originalRecord = RecordBeanHelper
-        .createRecord(conversionUtil, Collections.emptyMap(), topicConfig);
+        .createRecord(conversionUtil, Collections.emptyMap(), beanTopicConfig, true, true);
     originalRecord.key.setDoubleField(123);
     originalRecord.value.setNonNullableStringField("string");
 
     String alias = "alias1";
     String fullyQualifiedField = "nonNullableStringField";
-    topicConfig.getAliases().put(alias, fullyQualifiedField);
+    beanTopicConfig.getAliases().put(alias, fullyQualifiedField);
     fieldsToCopy.add(alias);
 
     // when
     KeyValue<TestMsgKey, TestMsgValue> outputRecord = RecordBeanHelper
-        .copyRecordPropertiesIntoNew(fieldsToCopy, originalRecord, topicConfig);
+        .copyRecordPropertiesIntoNew(fieldsToCopy, originalRecord, beanTopicConfig, true, true);
 
     // then
     assertEquals(originalRecord.value.getNonNullableStringField(),
@@ -202,11 +233,11 @@ public class RecordBeanHelperTest {
 
   @Test(expected = IllegalArgumentException.class)
   @SneakyThrows
-  public void copyRecordPropsIntoNew_allFieldsUsed() {
+  public void copyBeanRecordPropsIntoNew_allFieldsUsed() {
     Set<String> fieldsToCopy = new HashSet<>();
 
     KeyValue<TestMsgKey, TestMsgValue> originalRecord = RecordBeanHelper
-        .createRecord(conversionUtil, Collections.emptyMap(), topicConfig);
+        .createRecord(conversionUtil, Collections.emptyMap(), beanTopicConfig, true, true);
     originalRecord.key.setDoubleField(123);
     originalRecord.value.setNonNullableStringField("string");
 
@@ -215,7 +246,25 @@ public class RecordBeanHelperTest {
     fieldsToCopy.add("nonExistentField");
 
     // when
-    RecordBeanHelper.copyRecordPropertiesIntoNew(fieldsToCopy, originalRecord, topicConfig);
+    RecordBeanHelper.copyRecordPropertiesIntoNew(fieldsToCopy, originalRecord, beanTopicConfig,
+        true, true);
+
+    fail();
+  }
+
+  @Test(expected = IllegalArgumentException.class)
+  @SneakyThrows
+  public void copyPrimitiveRecordPropsIntoNew_allFieldsUsed() {
+    Set<String> fieldsToCopy = new HashSet<>();
+
+    KeyValue<String, String> originalRecord = KeyValue.pair("key", "value");
+    fieldsToCopy.add("KEY");
+    fieldsToCopy.add("VALUE");
+    fieldsToCopy.add("nonExistentField");
+
+    // when
+    RecordBeanHelper.copyRecordPropertiesIntoNew(fieldsToCopy, originalRecord, primitiveTopicConfig,
+        false, false);
 
     fail();
   }
@@ -226,7 +275,7 @@ public class RecordBeanHelperTest {
     Set<String> fieldsToCopy = new HashSet<>();
 
     KeyValue<TestMsgKey, TestMsgValue> originalRecord = RecordBeanHelper
-        .createRecord(conversionUtil, Collections.emptyMap(), topicConfig);
+        .createRecord(conversionUtil, Collections.emptyMap(), beanTopicConfig, true, true);
     originalRecord.key.setDoubleField(123);
     originalRecord.value.setDoubleField(234);
 
@@ -235,7 +284,7 @@ public class RecordBeanHelperTest {
 
     // when
     KeyValue<TestMsgKey, TestMsgValue> outputRecord = RecordBeanHelper
-        .copyRecordPropertiesIntoNew(fieldsToCopy, originalRecord, topicConfig);
+        .copyRecordPropertiesIntoNew(fieldsToCopy, originalRecord, beanTopicConfig, true, true);
 
     // then
     assertEquals(originalRecord.key.getDoubleField(), outputRecord.key.getDoubleField(), 0.00001);
@@ -249,7 +298,7 @@ public class RecordBeanHelperTest {
     Set<String> fieldsToCopy = new HashSet<>();
 
     KeyValue<TestMsgKey, TestMsgValue> originalRecord = RecordBeanHelper
-        .createRecord(conversionUtil, Collections.emptyMap(), topicConfig);
+        .createRecord(conversionUtil, Collections.emptyMap(), beanTopicConfig, true, true);
     originalRecord.key.setDoubleField(123);
     originalRecord.value.setDoubleField(234);
 
@@ -258,7 +307,7 @@ public class RecordBeanHelperTest {
 
     // when
     KeyValue<TestMsgKey, TestMsgValue> outputRecord = RecordBeanHelper
-        .copyRecordPropertiesIntoNew(fieldsToCopy, originalRecord, topicConfig);
+        .copyRecordPropertiesIntoNew(fieldsToCopy, originalRecord, beanTopicConfig, true, true);
 
     // then
     assertNotEquals(originalRecord.key.getDoubleField(), outputRecord.key.getDoubleField(),
@@ -269,22 +318,22 @@ public class RecordBeanHelperTest {
 
   @Test
   @SneakyThrows
-  public void createRecord_nullableFieldDefaultNull() {
+  public void createBeanRecord_nullableFieldDefaultNull() {
     Map<String, String> fieldMap = new HashMap<>();
 
     KeyValue<TestMsgKey, TestMsgValue> record = RecordBeanHelper
-        .createRecord(conversionUtil, fieldMap, topicConfig);
+        .createRecord(conversionUtil, fieldMap, beanTopicConfig, true, true);
 
     assertNull(record.value.getNullableStringField());
   }
 
   @Test
   @SneakyThrows
-  public void createRecord_nonNullableFieldDefault() {
+  public void createBeanRecord_nonNullableFieldDefault() {
     Map<String, String> fieldMap = new HashMap<>();
 
     KeyValue<TestMsgKey, TestMsgValue> record = RecordBeanHelper
-        .createRecord(conversionUtil, fieldMap, topicConfig);
+        .createRecord(conversionUtil, fieldMap, beanTopicConfig, true, true);
 
     assertNotNull(record.value.getNonNullableStringField());
     assertTrue(record.value.getNonNullableStringField().isEmpty());
@@ -292,14 +341,14 @@ public class RecordBeanHelperTest {
 
   @Test
   @SneakyThrows
-  public void createRecord_definedFieldDefault() {
+  public void createBeanRecord_definedFieldDefault() {
     Map<String, String> fieldMap = new HashMap<>();
     String defaultValue = "defValue";
-    topicConfig.getDefaultValues().put("nullableStringField", defaultValue);
-    topicConfig.getDefaultValues().put("nonNullableStringField", defaultValue);
+    beanTopicConfig.getDefaultValues().put("nullableStringField", defaultValue);
+    beanTopicConfig.getDefaultValues().put("nonNullableStringField", defaultValue);
 
     KeyValue<TestMsgKey, TestMsgValue> record = RecordBeanHelper
-        .createRecord(conversionUtil, fieldMap, topicConfig);
+        .createRecord(conversionUtil, fieldMap, beanTopicConfig, true, true);
 
     assertEquals(defaultValue, record.value.getNullableStringField());
     assertEquals(defaultValue, record.value.getNonNullableStringField());
@@ -307,35 +356,35 @@ public class RecordBeanHelperTest {
 
   @Test
   @SneakyThrows
-  public void createRecord_definedFieldDefaultConvertedUsingConversion() {
+  public void createBeanRecord_definedFieldDefaultConvertedUsingConversion() {
     Map<String, String> fieldMap = new HashMap<>();
     String defaultValue = "defValue";
     String fieldName = "nonNullableStringField";
     Function<String, Object> conversionFunction = stringValue -> stringValue.toLowerCase()
         + stringValue.toUpperCase();
 
-    topicConfig.getDefaultValues().put(fieldName, defaultValue);
-    topicConfig.getConversions().put(fieldName, conversionFunction);
+    beanTopicConfig.getDefaultValues().put(fieldName, defaultValue);
+    beanTopicConfig.getConversions().put(fieldName, conversionFunction);
 
     KeyValue<TestMsgKey, TestMsgValue> record = RecordBeanHelper
-        .createRecord(conversionUtil, fieldMap, topicConfig);
+        .createRecord(conversionUtil, fieldMap, beanTopicConfig, true, true);
 
     assertEquals(conversionFunction.apply(defaultValue), record.value.getNonNullableStringField());
   }
 
   @Test
   @SneakyThrows
-  public void createRecord_aliasDefinedFieldDefault() {
+  public void createBeanRecord_aliasDefinedFieldDefault() {
     Map<String, String> fieldMap = new HashMap<>();
     String defaultValue = "defValue";
     String fieldAlias = "fieldAlias";
     String fieldName = "nonNullableStringField";
 
-    topicConfig.getDefaultValues().put(fieldAlias, defaultValue);
-    topicConfig.getAliases().put(fieldAlias, fieldName);
+    beanTopicConfig.getDefaultValues().put(fieldAlias, defaultValue);
+    beanTopicConfig.getAliases().put(fieldAlias, fieldName);
 
     KeyValue<TestMsgKey, TestMsgValue> record = RecordBeanHelper
-        .createRecord(conversionUtil, fieldMap, topicConfig);
+        .createRecord(conversionUtil, fieldMap, beanTopicConfig, true, true);
 
     assertEquals(defaultValue, record.value.getNonNullableStringField());
   }

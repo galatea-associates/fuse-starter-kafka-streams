@@ -1,5 +1,6 @@
 package org.galatea.kafka.starter.testing.bean;
 
+import java.lang.reflect.InvocationTargetException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -7,6 +8,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.function.Function;
@@ -41,11 +43,28 @@ public class RecordBeanHelper {
    * TopicConfig#createValue()}
    */
   public static <K, V> KeyValue<K, V> createRecord(ConversionUtil conversionUtil,
-      Map<String, String> fields, TopicConfig<K, V> topicConfig) throws Exception {
+      Map<String, String> fields, TopicConfig<K, V> topicConfig, boolean keyIsBean,
+      boolean valueIsBean) throws Exception {
 
     Set<String> fieldsUsed = new HashSet<>();
-    K key = RecordBeanHelper.createKey(conversionUtil, fields, topicConfig, fieldsUsed);
-    V value = RecordBeanHelper.createValue(conversionUtil, fields, topicConfig, fieldsUsed);
+
+    K key;
+    V value;
+    if (keyIsBean) {
+      key = RecordBeanHelper.createKey(conversionUtil, fields, topicConfig, fieldsUsed);
+    } else {
+      String keyObjectKey = PREFIX_KEY.substring(0, PREFIX_KEY.length() - 1);
+      key = RecordBeanHelper
+          .createPrimitive(fields, topicConfig.createKey(), fieldsUsed, keyObjectKey);
+    }
+
+    if (valueIsBean) {
+      value = RecordBeanHelper.createValue(conversionUtil, fields, topicConfig, fieldsUsed);
+    } else {
+      String valueObjectKey = PREFIX_VALUE.substring(0, PREFIX_VALUE.length() - 1);
+      value = RecordBeanHelper
+          .createPrimitive(fields, topicConfig.createValue(), fieldsUsed, valueObjectKey);
+    }
 
     Map<String, String> expandedFieldMap = AliasHelper
         .expandAliasKeys(fields, topicConfig.getAliases());
@@ -63,6 +82,26 @@ public class RecordBeanHelper {
     return new KeyValue<>(key, value);
   }
 
+  private static <K> K createPrimitive(Map<String, String> fields, K emptyObj,
+      Set<String> fieldsUsed, String objKey)
+      throws IllegalAccessException, InvocationTargetException, InstantiationException {
+    String objStringValue = fields.get(objKey);
+    Class<?> objClass = emptyObj.getClass();
+    Objects.requireNonNull(objStringValue, String.format("Unmet requirement for non-bean type [%s]: "
+        + "field '%s' populated", objClass.getSimpleName(), objKey));
+
+    K key;
+    try {
+      key = (K) objClass.getConstructor(String.class).newInstance(objStringValue);
+      fieldsUsed.add(objKey);
+    } catch (NoSuchMethodException e) {
+      throw new IllegalStateException(String.format("Could not find String constructor for "
+              + "type %s. Maybe this class needs to be registered as a Bean type",
+          objClass.getSimpleName()));
+    }
+    return key;
+  }
+
   /**
    * Copy specified properties from source record into new record
    *
@@ -74,19 +113,42 @@ public class RecordBeanHelper {
    * TopicConfig#createValue()}
    */
   public static <K, V> KeyValue<K, V> copyRecordPropertiesIntoNew(Set<String> fieldsToCopy,
-      KeyValue<K, V> originalRecord, TopicConfig<K, V> topicConfig) throws Exception {
+      KeyValue<K, V> originalRecord, TopicConfig<K, V> topicConfig, boolean keyIsBean,
+      boolean valueIsBean) throws Exception {
 
     fieldsToCopy = AliasHelper.expandAliasKeys(fieldsToCopy, topicConfig.getAliases());
     HashSet<String> uncopiedFields = new HashSet<>(fieldsToCopy);
-
     Set<String> copiedProperties = new HashSet<>();
-    K newKey = topicConfig.createKey();
-    copyBeanProperties(fieldsToCopy, originalRecord.key, newKey, copiedProperties, PREFIX_KEY,
-        PREFIX_VALUE);
 
-    V newValue = topicConfig.createValue();
-    copyBeanProperties(fieldsToCopy, originalRecord.value, newValue, copiedProperties, PREFIX_VALUE,
-        PREFIX_KEY);
+    K newKey;
+    if (keyIsBean) {
+      newKey = topicConfig.createKey();
+      copyBeanProperties(fieldsToCopy, originalRecord.key, newKey, copiedProperties, PREFIX_KEY,
+          PREFIX_VALUE);
+    } else {
+      String keyFieldKey = PREFIX_KEY.substring(0, PREFIX_KEY.length() - 1);
+      newKey = RecordBeanHelper.createPrimitive(originalRecord.key);
+      if (!fieldsToCopy.contains(keyFieldKey)) {
+        log.warn("Copying field {} because it is a primitive", keyFieldKey);
+      } else {
+        copiedProperties.add(keyFieldKey);
+      }
+    }
+
+    V newValue;
+    if (valueIsBean) {
+      newValue = topicConfig.createValue();
+      copyBeanProperties(fieldsToCopy, originalRecord.value, newValue, copiedProperties,
+          PREFIX_VALUE, PREFIX_KEY);
+    } else {
+      newValue = RecordBeanHelper.createPrimitive(originalRecord.value);
+      String valueFieldKey = PREFIX_VALUE.substring(0, PREFIX_VALUE.length() - 1);
+      if (!fieldsToCopy.contains(valueFieldKey)) {
+        log.warn("Copying field {} because it is a primitive", valueFieldKey);
+      } else {
+        copiedProperties.add(valueFieldKey);
+      }
+    }
 
     uncopiedFields.removeAll(copiedProperties);
     if (!uncopiedFields.isEmpty()) {
@@ -100,6 +162,20 @@ public class RecordBeanHelper {
 
     return new KeyValue<>(newKey, newValue);
   }
+
+  private static <K> K createPrimitive(K original)
+      throws IllegalAccessException, InvocationTargetException, InstantiationException {
+    K key;
+    try {
+      key = (K) original.getClass().getConstructor(String.class).newInstance(original.toString());
+    } catch (NoSuchMethodException e) {
+      throw new IllegalStateException(String.format("Could not find String constructor for "
+              + "type %s. Maybe this class needs to be registered as a Bean type",
+          original.getClass().getSimpleName()));
+    }
+    return key;
+  }
+
 
   /**
    * Copy specified properties from source to destination bean.
