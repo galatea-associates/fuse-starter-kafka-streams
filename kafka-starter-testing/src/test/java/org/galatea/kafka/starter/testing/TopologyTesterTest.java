@@ -63,4 +63,25 @@ public class TopologyTesterTest {
     // then
     tester.assertOutputList(outputTopic, expected, false);
   }
+
+  /*
+  * TODO: add tests for the following scenarios:
+  *  mockStreams for retrieving stores
+  *  delete state store dir upon constructor
+  *  use t-date pattern for localdate
+  *  use number for localdate
+  *  registering bean classes causes different treatment
+  *  registering avro classes causes different treatment
+  *  beforeTest wipes output and stores
+  *  purgeMessagesInOutput wipes output
+  *  trying to pipeInput without configuring causes exception
+  *  trying to assertOutput without configuring causes exception
+  *  assertOutputList throws exception if maps contain different key sets
+  *  assertOutputList fails when expected is empty but output is not
+  *  assertOutputList uses aliases and conversions
+  *  assertOutputMap only has latest for each key
+  *  assertStoreContain
+  *  assertStoreNotContain
+  *  assertOutputList only compares fields expected to be in output
+  * */
 }
