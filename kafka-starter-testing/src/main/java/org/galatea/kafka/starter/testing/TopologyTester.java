@@ -7,7 +7,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.unitils.reflectionassert.ReflectionAssert.assertReflectionEquals;
 
+import java.io.Closeable;
 import java.io.File;
+import java.io.IOException;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -46,7 +48,7 @@ import org.springframework.util.FileSystemUtils;
 import org.unitils.reflectionassert.ReflectionComparatorMode;
 
 @Slf4j
-public class TopologyTester {
+public class TopologyTester implements Closeable {
 
   @Getter
   private final TopologyTestDriver driver;
@@ -70,7 +72,7 @@ public class TopologyTester {
   public KafkaStreams mockStreams() {
     KafkaStreams mockStreams = mock(KafkaStreams.class);
     when(mockStreams.store(any(String.class), any(QueryableStoreType.class)))
-        .thenAnswer(invocationOnMock -> driver.getStateStore(invocationOnMock.getArgument(0)));
+        .thenAnswer(invocationOnMock -> driver.getKeyValueStore(invocationOnMock.getArgument(0)));
     return mockStreams;
   }
 
@@ -416,4 +418,8 @@ public class TopologyTester {
     return (TopicConfig<K, V>) topicConfig;
   }
 
+  @Override
+  public void close() throws IOException {
+    driver.close();
+  }
 }

@@ -18,10 +18,13 @@ import org.apache.kafka.streams.KeyValue;
 import org.galatea.kafka.starter.testing.TopicConfig;
 import org.galatea.kafka.starter.testing.alias.AliasHelper;
 import org.galatea.kafka.starter.testing.avro.AvroMessageUtil;
+import org.galatea.kafka.starter.testing.bean.editor.InstantEditor;
+import org.galatea.kafka.starter.testing.bean.editor.JodaDateTimeEditor;
+import org.galatea.kafka.starter.testing.bean.editor.JodaLocalDateEditor;
+import org.galatea.kafka.starter.testing.bean.editor.JodaLocalTimeEditor;
+import org.galatea.kafka.starter.testing.bean.editor.LocalDateEditor;
+import org.galatea.kafka.starter.testing.bean.editor.LocalTimeEditor;
 import org.galatea.kafka.starter.testing.conversion.ConversionUtil;
-import org.galatea.kafka.starter.testing.editor.InstantEditor;
-import org.galatea.kafka.starter.testing.editor.LocalDateEditor;
-import org.galatea.kafka.starter.testing.editor.LocalTimeEditor;
 import org.springframework.beans.BeanWrapper;
 import org.springframework.beans.BeanWrapperImpl;
 import org.springframework.beans.TypeMismatchException;
@@ -87,8 +90,9 @@ public class RecordBeanHelper {
       throws IllegalAccessException, InvocationTargetException, InstantiationException {
     String objStringValue = fields.get(objKey);
     Class<?> objClass = emptyObj.getClass();
-    Objects.requireNonNull(objStringValue, String.format("Unmet requirement for non-bean type [%s]: "
-        + "field '%s' populated", objClass.getSimpleName(), objKey));
+    Objects
+        .requireNonNull(objStringValue, String.format("Unmet requirement for non-bean type [%s]: "
+            + "field '%s' populated", objClass.getSimpleName(), objKey));
 
     K key;
     try {
@@ -317,9 +321,9 @@ public class RecordBeanHelper {
   }
 
   private static Set<String> setFieldsInBean(BeanWrapper wrappedObj,
-      Map<String, String> defaultValues,
-      ConversionUtil conversionUtil, Map<String, Function<String, Object>> conversions,
-      String alwaysExcludePrefix, String maybeIncludePrefix) {
+      Map<String, String> defaultValues, ConversionUtil conversionUtil,
+      Map<String, Function<String, Object>> conversions, String alwaysExcludePrefix,
+      String maybeIncludePrefix) {
     Set<String> fieldsUsed = new HashSet<>();
     for (Entry<String, String> entry : defaultValues.entrySet()) {
       String fullFieldPath = entry.getKey();
@@ -377,6 +381,9 @@ public class RecordBeanHelper {
    */
   private static BeanWrapper wrapBean(Object bean) {
     BeanWrapper wrapper = new BeanWrapperImpl(bean);
+    wrapper.registerCustomEditor(org.joda.time.DateTime.class, new JodaDateTimeEditor());
+    wrapper.registerCustomEditor(org.joda.time.LocalDate.class, new JodaLocalDateEditor());
+    wrapper.registerCustomEditor(org.joda.time.LocalTime.class, new JodaLocalTimeEditor());
     wrapper.registerCustomEditor(LocalDate.class, new LocalDateEditor());
     wrapper.registerCustomEditor(LocalTime.class, new LocalTimeEditor());
     wrapper.registerCustomEditor(Instant.class, new InstantEditor());

@@ -1,4 +1,4 @@
-package org.galatea.kafka.starter.testing.editor;
+package org.galatea.kafka.starter.testing.bean.editor;
 
 import java.beans.PropertyEditorSupport;
 import java.time.LocalTime;
