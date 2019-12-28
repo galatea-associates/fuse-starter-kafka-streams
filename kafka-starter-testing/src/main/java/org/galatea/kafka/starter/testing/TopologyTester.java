@@ -178,7 +178,7 @@ public class TopologyTester implements Closeable {
 
   public <K, V> void configureStore(String storeName, Serde<K> keySerde, Serde<V> valueSerde,
       Callable<K> createEmptyKey, Callable<V> createEmptyValue) {
-    outputTopicConfig.put(storeName,
+    storeConfig.put(storeName,
         new TopicConfig<>(storeName, keySerde, valueSerde, createEmptyKey, createEmptyValue));
   }
 
