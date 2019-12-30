@@ -63,6 +63,9 @@ public class AvroMessageUtil {
 
   public <T extends SpecificRecord> void populateRequiredFieldsWithDefaults(T message)
       throws ClassNotFoundException, InstantiationException, IllegalAccessException {
+    if (message == null) {
+      return;
+    }
     Schema schema = message.getSchema();
 
     for (Field field : schema.getFields()) {

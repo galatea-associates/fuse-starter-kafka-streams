@@ -78,7 +78,6 @@ public class StreamControllerTest {
 
     Map<String, String> expectedOutput = new HashMap<>();
     expectedOutput.put("securityId", "secId");
-//    expectedOutput.put("qty", "10");
     tester.assertOutputList(normalizedTradeTopic, Collections.singletonList(expectedOutput), true);
   }
 

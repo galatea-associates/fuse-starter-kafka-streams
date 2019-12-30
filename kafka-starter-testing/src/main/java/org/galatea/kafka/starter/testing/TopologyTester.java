@@ -1,6 +1,7 @@
 package org.galatea.kafka.starter.testing;
 
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -10,7 +11,6 @@ import static org.unitils.reflectionassert.ReflectionAssert.assertReflectionEqua
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
-import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -23,8 +23,6 @@ import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.Callable;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.specific.SpecificRecord;
@@ -58,12 +56,10 @@ public class TopologyTester implements Closeable {
   private final Set<Class<?>> beanClasses = new HashSet<>();
   private final Set<Class<?>> avroClasses = new HashSet<>();
 
-  public static final LocalDate REF_DATE = LocalDate.of(2020, 1, 1);
-
   @Getter
   private final ConversionUtil typeConversionUtil = new ConversionUtil();
-  private final Pattern relativeTDatePattern = Pattern
-      .compile("^\\s*[Tt]\\s*(([+-])\\s*(\\d+)\\s*)?$");
+  @Getter
+  private final AvroMessageUtil avroMessageUtil = AvroMessageUtil.defaultUtil();
 
   /**
    * Use this KafkaStreams object for calling any code that needs to retrieve stores from the
@@ -77,37 +73,16 @@ public class TopologyTester implements Closeable {
   }
 
   public TopologyTester(Topology topology, Properties streamProperties) {
-    String stateDir = streamProperties.getProperty(StreamsConfig.STATE_DIR_CONFIG);
+    String stateDir =
+        streamProperties.getProperty(StreamsConfig.STATE_DIR_CONFIG) + "/" + streamProperties
+            .getProperty(StreamsConfig.APPLICATION_ID_CONFIG);
     File dirFile = new File(stateDir);
     if (dirFile.exists() && !FileSystemUtils.deleteRecursively(dirFile)) {
       log.error("Was unable to delete state dir before tests: {}", stateDir);
     }
     driver = new TopologyTestDriver(topology, streamProperties);
-
-    typeConversionUtil.registerTypeConversion(LocalDate.class, Pattern.compile("^\\d+$"),
-        stringValue -> LocalDate.ofEpochDay(Long.parseLong(stringValue)));
-    typeConversionUtil.registerTypeConversion(LocalDate.class, relativeTDatePattern,
-        tDateString -> {
-          Matcher matcher = relativeTDatePattern.matcher(tDateString);
-          if (!matcher.find()) {
-            throw new IllegalStateException(
-                "Registered pattern does not match used pattern for type conversion");
-          }
-
-          if (matcher.group(1) != null) {
-            String plusMinus = matcher.group(2);
-            long numDays = Long.parseLong(matcher.group(3));
-            if (plusMinus.equals("+")) {
-              return REF_DATE.plusDays(numDays);
-            } else if (plusMinus.equals("-")) {
-              return REF_DATE.minusDays(numDays);
-            } else {
-              throw new IllegalArgumentException(
-                  "Group 2 of regex expected to be either '+' or '-'");
-            }
-          }
-          return REF_DATE;
-        });
+    log.info("Initiated new TopologyTester with application ID: {}",
+        streamProperties.getProperty(StreamsConfig.APPLICATION_ID_CONFIG));
   }
 
   /**
@@ -164,6 +139,10 @@ public class TopologyTester implements Closeable {
 
   public <K, V> void configureInputTopic(Topic<K, V> topic,
       Callable<K> createEmptyKey, Callable<V> createEmptyValue) {
+    if (inputTopicConfig.containsKey(topic.getName())) {
+      throw new IllegalStateException(
+          String.format("Input topic %s cannot be configured more than once", topic.getName()));
+    }
     inputTopicConfig.put(topic.getName(),
         new TopicConfig<>(topic.getName(), topic.getKeySerde(), topic.getValueSerde(),
             createEmptyKey, createEmptyValue));
@@ -171,6 +150,10 @@ public class TopologyTester implements Closeable {
 
   public <K, V> void configureOutputTopic(Topic<K, V> topic,
       Callable<K> createEmptyKey, Callable<V> createEmptyValue) {
+    if (outputTopicConfig.containsKey(topic.getName())) {
+      throw new IllegalStateException(
+          String.format("Output topic %s cannot be configured more than once", topic.getName()));
+    }
     outputTopicConfig.put(topic.getName(),
         new TopicConfig<>(topic.getName(), topic.getKeySerde(), topic.getValueSerde(),
             createEmptyKey, createEmptyValue));
@@ -178,6 +161,10 @@ public class TopologyTester implements Closeable {
 
   public <K, V> void configureStore(String storeName, Serde<K> keySerde, Serde<V> valueSerde,
       Callable<K> createEmptyKey, Callable<V> createEmptyValue) {
+    if (storeConfig.containsKey(storeName)) {
+      throw new IllegalStateException(
+          String.format("Store %s cannot be configured more than once", storeName));
+    }
     storeConfig.put(storeName,
         new TopicConfig<>(storeName, keySerde, valueSerde, createEmptyKey, createEmptyValue));
   }
@@ -192,22 +179,10 @@ public class TopologyTester implements Closeable {
   public <K, V> void pipeInput(Topic<K, V> topic, Map<String, String> fieldMap) throws Exception {
     TopicConfig<K, V> topicConfig = inputTopicConfig(topic);
 
-    boolean keyIsBean = keyIsBean(topicConfig);
-    boolean valueIsBean = valueIsBean(topicConfig);
-    boolean keyIsAvro = keyIsAvro(topicConfig);
-    boolean valueIsAvro = valueIsAvro(topicConfig);
+    KeyValue<K, V> record = createRecordWithAvroUtil(fieldMap, topicConfig);
 
-    KeyValue<K, V> record = RecordBeanHelper
-        .createRecord(typeConversionUtil, fieldMap, topicConfig, keyIsBean, valueIsBean);
-
-    if (keyIsAvro) {
-      AvroMessageUtil.defaultUtil().populateRequiredFieldsWithDefaults((SpecificRecord) record.key);
-    }
-    if (valueIsAvro) {
-      AvroMessageUtil.defaultUtil()
-          .populateRequiredFieldsWithDefaults((SpecificRecord) record.value);
-    }
-
+    log.info("{} Piping record into topology on topic {}: {}", TopologyTester.class.getSimpleName(),
+        topic.getName(), record);
     driver.pipeInput(topicConfig.factory().create(Collections.singletonList(record)));
   }
 
@@ -252,6 +227,10 @@ public class TopologyTester implements Closeable {
     TopicConfig<K, V> topicConfig = outputTopicConfig(topic);
 
     List<KeyValue<K, V>> output = readOutput(topicConfig);
+    if (expectedRecords.isEmpty() && output.isEmpty()) {
+      return;
+    }
+
     if (!output.isEmpty()) {
       assertFalse("output is not empty but expectedOutput is. At least 1 record is required "
           + "in 'expectedRecords' for in-depth comparison", expectedRecords.isEmpty());
@@ -265,30 +244,109 @@ public class TopologyTester implements Closeable {
 
     List<KeyValue<K, V>> expectedOutput = new ArrayList<>();
     for (Map<String, String> expectedRecordMap : expectedRecords) {
+      expectedRecordMap = AliasHelper.expandAliasKeys(expectedRecordMap, topicConfig.getAliases());
       if (!expectedRecordMap.keySet().equals(expectedFields)) {
         throw new IllegalArgumentException(String.format("Expected records (as maps) have "
                 + "differing key sets.\n\tExpected: %s\n\tActual: %s", expectedFields,
             expectedRecordMap.keySet()));
       }
 
-      boolean keyIsBean = keyIsBean(topicConfig);
-      boolean valueIsBean = valueIsBean(topicConfig);
-
-      expectedOutput.add(RecordBeanHelper.copyRecordPropertiesIntoNew(expectedFields,
-          RecordBeanHelper
-              .createRecord(typeConversionUtil, expectedRecordMap, topicConfig, keyIsBean,
-                  valueIsBean),
-          topicConfig, keyIsBean, valueIsBean));
+      expectedOutput.add(createRecordWithAvroUtil(expectedRecordMap, topicConfig));
     }
 
     assertListEquals(expectedOutput, comparableActualOutput, lenientOrder);
   }
 
-  public <K, V> void assertOutputMap(Topic<K, V> topic, List<Map<String, String>> expectedRecords)
+  public void assertStoreContain(String storeName, Collection<Map<String, String>> expected)
       throws Exception {
+    TopicConfig<Object, Object> storeConfig = storeConfig(storeName);
+
+    if (expected.isEmpty()) {
+      return;
+    }
+
+    KeyValueStore<Object, Object> store = driver.getKeyValueStore(storeName);
+
+    Set<String> expectedFields = expected.iterator().next().keySet();
+    List<KeyValue<Object, Object>> storeContentsStripped = new ArrayList<>();
+    try (KeyValueIterator<Object, Object> iter = store.all()) {
+      while (iter.hasNext()) {
+        storeContentsStripped.add(stripUnnecessaryFields(iter.next(), expectedFields, storeConfig));
+      }
+    }
+
+    for (Map<String, String> expectedEntryMap : expected) {
+      if (!expectedEntryMap.keySet().equals(expectedFields)) {
+        throw new IllegalArgumentException(String.format("All maps in Collection of maps must "
+                + "have the same expected fields. \n\tExpected fields: %s\n\tActual Fields: %s",
+            expectedFields.toString(), expectedEntryMap.toString()));
+      }
+      KeyValue<Object, Object> expectedRecord = createRecordWithAvroUtil(expectedEntryMap,
+          storeConfig);
+      assertTrue(String.format("Store does not contain record with values: %s",
+          expectedEntryMap.toString()), storeContentsStripped.contains(expectedRecord));
+    }
+  }
+
+  public void assertStoreNotContain(String storeName, Collection<Map<String, String>> unexpected)
+      throws Exception {
+    TopicConfig<Object, Object> storeConfig = storeConfig(storeName);
+
+    if (unexpected.isEmpty()) {
+      return;
+    }
+
+    KeyValueStore<Object, Object> store = driver.getKeyValueStore(storeName);
+
+    Set<String> expectedFields = unexpected.iterator().next().keySet();
+    List<KeyValue<Object, Object>> storeContentsStripped = new ArrayList<>();
+    try (KeyValueIterator<Object, Object> iter = store.all()) {
+      while (iter.hasNext()) {
+        storeContentsStripped.add(stripUnnecessaryFields(iter.next(), expectedFields, storeConfig));
+      }
+    }
+
+    for (Map<String, String> expectedEntryMap : unexpected) {
+      if (!expectedEntryMap.keySet().equals(expectedFields)) {
+        throw new IllegalArgumentException(String.format("All maps in Collection of maps must "
+                + "have the same expected fields. \n\tExpected fields: %s\n\tActual Fields: %s",
+            expectedFields.toString(), expectedEntryMap.toString()));
+      }
+      KeyValue<Object, Object> unexpectedRecord = createRecordWithAvroUtil(expectedEntryMap,
+          storeConfig);
+      assertFalse(String.format("Store contains record with values: %s:\n\t%s",
+          expectedEntryMap.toString(), unexpectedRecord),
+          storeContentsStripped.contains(unexpectedRecord));
+    }
+  }
+
+  private <K, V> KeyValue<K, V> createRecordWithAvroUtil(Map<String, String> expectedEntryMap,
+      TopicConfig<K, V> topicConfig) throws Exception {
+    boolean keyIsBean = keyIsBean(topicConfig);
+    boolean valueIsBean = valueIsBean(topicConfig);
+
+    KeyValue<K, V> record = RecordBeanHelper
+        .createRecord(typeConversionUtil, expectedEntryMap, topicConfig, keyIsBean, valueIsBean);
+    if (keyIsAvro(topicConfig)) {
+      avroMessageUtil.populateRequiredFieldsWithDefaults((SpecificRecord) record.key);
+    }
+    if (valueIsAvro(topicConfig)) {
+      avroMessageUtil.populateRequiredFieldsWithDefaults((SpecificRecord) record.value);
+    }
+
+    return record;
+  }
+
+  public <K, V> void assertOutputMap(Topic<K, V> topic,
+      Collection<Map<String, String>> expectedRecords) throws Exception {
     TopicConfig<K, V> topicConfig = outputTopicConfig(topic);
 
     List<KeyValue<K, V>> output = readOutput(topicConfig);
+    if (output.isEmpty() && expectedRecords.isEmpty()) {
+      // both empty, no need to do anything else
+      return;
+    }
+
     Map<K, V> outputMap = new HashMap<>();
     for (KeyValue<K, V> outputRecord : output) {
       outputMap.put(outputRecord.key, outputRecord.value);
@@ -301,8 +359,9 @@ public class TopologyTester implements Closeable {
       assertFalse("output is not empty but expectedOutput is. At least 1 record is required "
           + "in 'expectedRecords' for in-depth comparison", expectedRecords.isEmpty());
     }
+
     Set<String> expectedFields = AliasHelper
-        .expandAliasKeys(expectedRecords.get(0).keySet(), topicConfig.getAliases());
+        .expandAliasKeys(expectedRecords.iterator().next().keySet(), topicConfig.getAliases());
 
     List<KeyValue<K, V>> comparableOutput = stripUnnecessaryFields(reducedOutput, expectedFields,
         topicConfig);
@@ -315,20 +374,11 @@ public class TopologyTester implements Closeable {
             expectedRecordMap.keySet()));
       }
 
-      boolean keyIsBean = keyIsBean(topicConfig);
-      boolean valueIsBean = valueIsBean(topicConfig);
-      expectedOutput.add(RecordBeanHelper.copyRecordPropertiesIntoNew(expectedFields,
-          RecordBeanHelper.createRecord(typeConversionUtil, expectedRecordMap, topicConfig,
-              keyIsBean, valueIsBean),
-          topicConfig, keyIsBean, valueIsBean));
+      expectedOutput.add(createRecordWithAvroUtil(expectedRecordMap, topicConfig));
     }
 
     assertListEquals(expectedOutput, comparableOutput, true);
   }
-
-  // TODO: add assertStoreContains method
-
-  // TODO: add assertStoreNotContain method
 
   private <K, V> List<KeyValue<K, V>> stripUnnecessaryFields(List<KeyValue<K, V>> records,
       Set<String> necessaryFields, TopicConfig<K, V> topicConfig) throws Exception {
@@ -336,15 +386,28 @@ public class TopologyTester implements Closeable {
     // strippedRecords will contain the same records as input, but with only necessary fields populated
     List<KeyValue<K, V>> strippedRecords = new ArrayList<>();
     for (KeyValue<K, V> originalRecord : records) {
-      // copy properties from into new records that ONLY have those fields set
-
-      boolean keyIsBean = keyIsBean(topicConfig);
-      boolean valueIsBean = valueIsBean(topicConfig);
-      strippedRecords.add(RecordBeanHelper
-          .copyRecordPropertiesIntoNew(necessaryFields, originalRecord, topicConfig,
-              keyIsBean, valueIsBean));
+      strippedRecords.add(stripUnnecessaryFields(originalRecord, necessaryFields, topicConfig));
     }
     return strippedRecords;
+  }
+
+  private <K, V> KeyValue<K, V> stripUnnecessaryFields(KeyValue<K, V> record,
+      Set<String> necessaryFields, TopicConfig<K, V> topicConfig) throws Exception {
+    boolean keyIsBean = keyIsBean(topicConfig);
+    boolean valueIsBean = valueIsBean(topicConfig);
+    boolean keyIsAvro = keyIsAvro(topicConfig);
+    boolean valueIsAvro = valueIsAvro(topicConfig);
+
+    KeyValue<K, V> strippedRecord = RecordBeanHelper
+        .copyRecordPropertiesIntoNew(necessaryFields, record, topicConfig, keyIsBean,
+            valueIsBean);
+    if (keyIsAvro) {
+      avroMessageUtil.populateRequiredFieldsWithDefaults((SpecificRecord) strippedRecord.key);
+    }
+    if (valueIsAvro) {
+      avroMessageUtil.populateRequiredFieldsWithDefaults((SpecificRecord) strippedRecord.value);
+    }
+    return strippedRecord;
   }
 
   private void assertListEquals(List<?> expected, List<?> actual,

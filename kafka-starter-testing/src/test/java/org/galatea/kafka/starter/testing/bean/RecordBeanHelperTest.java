@@ -2,9 +2,7 @@ package org.galatea.kafka.starter.testing.bean;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.Mockito.mock;
 
@@ -325,18 +323,6 @@ public class RecordBeanHelperTest {
         .createRecord(conversionUtil, fieldMap, beanTopicConfig, true, true);
 
     assertNull(record.value.getNullableStringField());
-  }
-
-  @Test
-  @SneakyThrows
-  public void createBeanRecord_nonNullableFieldDefault() {
-    Map<String, String> fieldMap = new HashMap<>();
-
-    KeyValue<TestMsgKey, TestMsgValue> record = RecordBeanHelper
-        .createRecord(conversionUtil, fieldMap, beanTopicConfig, true, true);
-
-    assertNotNull(record.value.getNonNullableStringField());
-    assertTrue(record.value.getNonNullableStringField().isEmpty());
   }
 
   @Test

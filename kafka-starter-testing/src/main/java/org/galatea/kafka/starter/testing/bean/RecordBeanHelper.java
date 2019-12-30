@@ -4,7 +4,6 @@ import java.lang.reflect.InvocationTargetException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -13,11 +12,9 @@ import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.function.Function;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.avro.specific.SpecificRecord;
 import org.apache.kafka.streams.KeyValue;
 import org.galatea.kafka.starter.testing.TopicConfig;
 import org.galatea.kafka.starter.testing.alias.AliasHelper;
-import org.galatea.kafka.starter.testing.avro.AvroMessageUtil;
 import org.galatea.kafka.starter.testing.bean.editor.InstantEditor;
 import org.galatea.kafka.starter.testing.bean.editor.JodaDateTimeEditor;
 import org.galatea.kafka.starter.testing.bean.editor.JodaLocalDateEditor;
@@ -34,6 +31,7 @@ public class RecordBeanHelper {
 
   public static final String PREFIX_KEY = "KEY.";
   public static final String PREFIX_VALUE = "VALUE.";
+  private static String NULL_STRING = "<null>";
 
   /**
    * Create record with specified fields set, using provided configuration for specific conversions
@@ -78,11 +76,15 @@ public class RecordBeanHelper {
     if (!unusedFields.isEmpty()) {
       StringBuilder sb = new StringBuilder("Fields were not used in creation of key or value ");
       sb.append("[").append(key.getClass().getSimpleName()).append("|")
-          .append(value.getClass().getSimpleName()).append("]");
+          .append(readableClassOf(value)).append("]");
       unusedFields.forEach(unusedField -> sb.append("\n\t").append(unusedField));
       throw new IllegalArgumentException(sb.toString());
     }
     return new KeyValue<>(key, value);
+  }
+
+  private static String readableClassOf(Object obj) {
+    return obj == null ? "NULL" : obj.getClass().getSimpleName();
   }
 
   private static <K> K createPrimitive(Map<String, String> fields, K emptyObj,
@@ -90,9 +92,8 @@ public class RecordBeanHelper {
       throws IllegalAccessException, InvocationTargetException, InstantiationException {
     String objStringValue = fields.get(objKey);
     Class<?> objClass = emptyObj.getClass();
-    Objects
-        .requireNonNull(objStringValue, String.format("Unmet requirement for non-bean type [%s]: "
-            + "field '%s' populated", objClass.getSimpleName(), objKey));
+    Objects.requireNonNull(objStringValue, String.format("Unmet requirement for non-bean type "
+        + "[%s]: field '%s' populated", objClass.getSimpleName(), objKey));
 
     K key;
     try {
@@ -139,19 +140,24 @@ public class RecordBeanHelper {
       }
     }
 
-    V newValue;
-    if (valueIsBean) {
-      newValue = topicConfig.createValue();
-      copyBeanProperties(fieldsToCopy, originalRecord.value, newValue, copiedProperties,
-          PREFIX_VALUE, PREFIX_KEY);
-    } else {
-      newValue = RecordBeanHelper.createPrimitive(originalRecord.value);
-      String valueFieldKey = PREFIX_VALUE.substring(0, PREFIX_VALUE.length() - 1);
-      if (!fieldsToCopy.contains(valueFieldKey)) {
-        log.warn("Copying field {} because it is a primitive", valueFieldKey);
+    final String valueFieldKey = PREFIX_VALUE.substring(0, PREFIX_VALUE.length() - 1);
+    V newValue = originalRecord.value;
+    if (originalRecord.value != null) {
+      if (valueIsBean) {
+        newValue = topicConfig.createValue();
+        copyBeanProperties(fieldsToCopy, originalRecord.value, newValue, copiedProperties,
+            PREFIX_VALUE, PREFIX_KEY);
       } else {
-        copiedProperties.add(valueFieldKey);
+        newValue = RecordBeanHelper.createPrimitive(originalRecord.value);
+        if (!fieldsToCopy.contains(valueFieldKey)) {
+          log.warn("Copying field {} because it is a primitive", valueFieldKey);
+        } else {
+          copiedProperties.add(valueFieldKey);
+        }
       }
+    } else {
+      // value is null, mark "VALUE" as a copied property
+      copiedProperties.add(valueFieldKey);
     }
 
     uncopiedFields.removeAll(copiedProperties);
@@ -159,7 +165,7 @@ public class RecordBeanHelper {
       StringBuilder sb = new StringBuilder(
           "Fields were not used in property copy of record types: ");
       sb.append("[").append(originalRecord.key.getClass().getSimpleName()).append("|")
-          .append(originalRecord.value.getClass().getSimpleName()).append("]");
+          .append(readableClassOf(originalRecord.value)).append("]");
       uncopiedFields.forEach(unusedField -> sb.append("\n\t").append(unusedField));
       throw new IllegalArgumentException(sb.toString());
     }
@@ -235,10 +241,10 @@ public class RecordBeanHelper {
         conversions, aliases, defaultValues, fieldsUsed, RecordBeanHelper.PREFIX_KEY,
         RecordBeanHelper.PREFIX_VALUE);
 
-    if (Arrays.asList(populatedKey.getClass().getInterfaces()).contains(SpecificRecord.class)) {
-      AvroMessageUtil.defaultUtil()
-          .populateRequiredFieldsWithDefaults((SpecificRecord) populatedKey);
-    }
+//    if (Arrays.asList(populatedKey.getClass().getInterfaces()).contains(SpecificRecord.class)) {
+//      AvroMessageUtil.defaultUtil()
+//          .populateRequiredFieldsWithDefaults((SpecificRecord) populatedKey);
+//    }
     return populatedKey;
   }
 
@@ -260,14 +266,18 @@ public class RecordBeanHelper {
     Map<String, Function<String, Object>> conversions = topicConfig.getConversions();
     Map<String, String> aliases = topicConfig.getAliases();
     Map<String, String> defaultValues = topicConfig.getDefaultValues();
+
+    String valueFieldName = PREFIX_VALUE.substring(0, PREFIX_VALUE.length() - 1);
+    if (fields.containsKey(valueFieldName) && fields.get(valueFieldName)
+        .equalsIgnoreCase(NULL_STRING)) {
+      fieldsUsed.add(valueFieldName);
+      return null;
+    }
+
     V populatedValue = createBeanWithValues(conversionUtil, topicConfig.getCreateEmptyValue(),
         fields, conversions, aliases, defaultValues, fieldsUsed, RecordBeanHelper.PREFIX_VALUE,
         RecordBeanHelper.PREFIX_KEY);
 
-    if (Arrays.asList(populatedValue.getClass().getInterfaces()).contains(SpecificRecord.class)) {
-      AvroMessageUtil.defaultUtil()
-          .populateRequiredFieldsWithDefaults((SpecificRecord) populatedValue);
-    }
     return populatedValue;
   }
 
