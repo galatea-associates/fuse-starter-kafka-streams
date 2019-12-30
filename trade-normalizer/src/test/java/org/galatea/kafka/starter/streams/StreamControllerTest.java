@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.Map;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.avro.specific.SpecificRecord;
 import org.apache.kafka.streams.TopologyTestDriver;
 import org.apache.kafka.streams.test.ConsumerRecordFactory;
 import org.galatea.kafka.starter.TestConfig;
@@ -57,6 +58,9 @@ public class StreamControllerTest {
       tester.configureInputTopic(securityTopic, SecurityIsinMsgKey::new, SecurityMsgValue::new);
       tester.configureInputTopic(inputTradeTopic, InputTradeMsgKey::new, InputTradeMsgValue::new);
       tester.configureOutputTopic(normalizedTradeTopic, TradeMsgKey::new, TradeMsgValue::new);
+
+      tester.registerBeanClass(SpecificRecord.class);
+      tester.registerAvroClass(SpecificRecord.class);
     }
     tester.beforeTest();
 
