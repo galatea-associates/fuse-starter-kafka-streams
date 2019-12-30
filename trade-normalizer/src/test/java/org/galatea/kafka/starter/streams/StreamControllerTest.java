@@ -6,8 +6,6 @@ import java.util.Map;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.specific.SpecificRecord;
-import org.apache.kafka.streams.TopologyTestDriver;
-import org.apache.kafka.streams.test.ConsumerRecordFactory;
 import org.galatea.kafka.starter.TestConfig;
 import org.galatea.kafka.starter.messaging.StreamProperties;
 import org.galatea.kafka.starter.messaging.Topic;
@@ -45,9 +43,6 @@ public class StreamControllerTest {
   @Autowired
   private Topic<TradeMsgKey, TradeMsgValue> normalizedTradeTopic;
 
-  private static TopologyTestDriver driver = null;
-  private static ConsumerRecordFactory<InputTradeMsgKey, InputTradeMsgValue> tradeFactory;
-  private static ConsumerRecordFactory<SecurityIsinMsgKey, SecurityMsgValue> securityFactory;
   private static TopologyTester tester;
 
   @Before
