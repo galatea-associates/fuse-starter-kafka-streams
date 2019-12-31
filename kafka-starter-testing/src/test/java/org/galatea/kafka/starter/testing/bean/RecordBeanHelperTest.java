@@ -375,4 +375,16 @@ public class RecordBeanHelperTest {
     assertEquals(defaultValue, record.value.getNonNullableStringField());
   }
 
+  @Test
+  @SneakyThrows
+  public void createBeanRecord_setFieldNull() {
+    Map<String, String> fieldMap = new HashMap<>();
+    fieldMap.put("nullableStringField", "<null>");
+
+    KeyValue<TestMsgKey, TestMsgValue> record = RecordBeanHelper
+        .createRecord(conversionUtil, fieldMap, beanTopicConfig, true, true);
+
+    assertNull(record.value.getNullableStringField());
+  }
+
 }
