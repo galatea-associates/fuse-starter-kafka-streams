@@ -12,7 +12,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.SneakyThrows;
 import org.apache.kafka.common.errors.SerializationException;
@@ -90,15 +89,9 @@ public class TopologyTesterTest {
     Pattern relativeTDatePattern = Pattern.compile("^\\s*[Tt]\\s*(([+-])\\s*(\\d+)\\s*)?$");
     ConversionUtil typeConversionUtil = tester.getTypeConversionUtil();
     typeConversionUtil.registerTypeConversion(LocalDate.class, Pattern.compile("^\\d+$"),
-        stringValue -> LocalDate.ofEpochDay(Long.parseLong(stringValue)));
+        (stringValue, matcher) -> LocalDate.ofEpochDay(Long.parseLong(stringValue)));
     typeConversionUtil.registerTypeConversion(LocalDate.class, relativeTDatePattern,
-        tDateString -> {
-          Matcher matcher = relativeTDatePattern.matcher(tDateString);
-          if (!matcher.find()) {
-            throw new IllegalStateException(
-                "Registered pattern does not match used pattern for type conversion");
-          }
-
+        (tDateString, matcher) -> {
           if (matcher.group(1) != null) {
             String plusMinus = matcher.group(2);
             long numDays = Long.parseLong(matcher.group(3));
@@ -303,7 +296,7 @@ public class TopologyTesterTest {
     Map<String, String> inputRecord = new HashMap<>();
     inputRecord.put("nonNullableStringField", "test");
     Map<String, String> storeRecord = new HashMap<>();
-    inputRecord.put("nonNullableStringField", "TEST");
+    storeRecord.put("nonNullableStringField", "TEST");
 
     tester.pipeInput(inputTopic2, inputRecord);
     tester.beforeTest();

@@ -65,7 +65,7 @@ public class ConversionUtilTest {
   @Test
   public void useExistingTypeConversion() {
     conversionUtil.registerTypeConversion(LocalDate.class, Pattern.compile("^\\d+$"),
-        s -> LocalDate.ofEpochDay(Long.parseLong(s)));
+        (s, m) -> LocalDate.ofEpochDay(Long.parseLong(s)));
     Object convertedDate = conversionUtil.maybeUseTypeConversion(LocalDate.class, "1");
 
     assertEquals(LocalDate.ofEpochDay(1), convertedDate);
@@ -75,7 +75,7 @@ public class ConversionUtilTest {
   public void useExistingTypeConversion_NoMatchPattern() {
     String converterInput = "1 1";
     conversionUtil.registerTypeConversion(LocalDate.class, Pattern.compile("^\\d+$"),
-        s -> LocalDate.ofEpochDay(Long.parseLong(s)));
+        (s, m) -> LocalDate.ofEpochDay(Long.parseLong(s)));
     Object convertedDate = conversionUtil.maybeUseTypeConversion(LocalDate.class, converterInput);
 
     assertEquals(converterInput, convertedDate);

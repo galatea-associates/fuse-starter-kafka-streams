@@ -4,13 +4,15 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javafx.util.Pair;
 
 public class ConversionUtil {
 
-  private final Map<Class, List<Pair<Pattern, Function<String, ?>>>> typeConversionMap = new HashMap<>();
+  private final Map<Class, List<Pair<Pattern, BiFunction<String, Matcher, ?>>>> typeConversionMap = new HashMap<>();
 
   public static Object convertFieldValue(String fieldPath, String fieldValue,
       Map<String, Function<String, Object>> conversionMap) {
@@ -27,13 +29,13 @@ public class ConversionUtil {
   }
 
   public <T> void registerTypeConversion(Class<T> forClass, Pattern matchPattern,
-      Function<String, T> conversion) {
-    List<Pair<Pattern, Function<String, T>>> conversionList = conversionsForType(forClass);
+      BiFunction<String, Matcher, T> conversion) {
+    List<Pair<Pattern, BiFunction<String, Matcher, T>>> conversionList = conversionsForType(forClass);
     conversionList.add(new Pair<>(matchPattern, conversion));
   }
 
   @SuppressWarnings("unchecked")
-  private <T> List<Pair<Pattern, Function<String, T>>> conversionsForType(Class<T> forClass) {
+  private <T> List<Pair<Pattern, BiFunction<String, Matcher, T>>> conversionsForType(Class<T> forClass) {
     if (!typeConversionMap.containsKey(forClass)) {
       typeConversionMap.put(forClass, new ArrayList<>());
     }
@@ -45,9 +47,10 @@ public class ConversionUtil {
    * conversion. otherwise return input object unmodified.
    */
   public <T> Object maybeUseTypeConversion(Class<T> forType, String stringValue) {
-    for (Pair<Pattern, Function<String, T>> conversionPair : conversionsForType(forType)) {
-      if (conversionPair.getKey().matcher(stringValue).find()) {
-        return conversionPair.getValue().apply(stringValue);
+    for (Pair<Pattern, BiFunction<String, Matcher, T>> conversionPair : conversionsForType(forType)) {
+      Matcher matcher = conversionPair.getKey().matcher(stringValue);
+      if (matcher.find()) {
+        return conversionPair.getValue().apply(stringValue, matcher);
       }
     }
     return stringValue;
