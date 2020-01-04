@@ -20,6 +20,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.Callable;
@@ -114,6 +115,10 @@ public class TopologyTester implements Closeable {
           log.info("Deleting entry in {}: {}", storeName, entry);
           kvStore.delete(entry.key);
         }
+
+        // TODO: clear store caches that are created by kafka streams internal stores
+
+        kvStore.flush();
       }
     }
   }
@@ -137,7 +142,7 @@ public class TopologyTester implements Closeable {
     return (TopicConfig) storeConfig.get(storeName);
   }
 
-  public <K, V> void configureInputTopic(Topic<K, V> topic,
+  public <K, V> TopicConfig<K, V> configureInputTopic(Topic<K, V> topic,
       Callable<K> createEmptyKey, Callable<V> createEmptyValue) {
     if (inputTopicConfig.containsKey(topic.getName())) {
       throw new IllegalStateException(
@@ -146,9 +151,10 @@ public class TopologyTester implements Closeable {
     inputTopicConfig.put(topic.getName(),
         new TopicConfig<>(topic.getName(), topic.getKeySerde(), topic.getValueSerde(),
             createEmptyKey, createEmptyValue));
+    return inputTopicConfig(topic);
   }
 
-  public <K, V> void configureOutputTopic(Topic<K, V> topic,
+  public <K, V> TopicConfig<K, V> configureOutputTopic(Topic<K, V> topic,
       Callable<K> createEmptyKey, Callable<V> createEmptyValue) {
     if (outputTopicConfig.containsKey(topic.getName())) {
       throw new IllegalStateException(
@@ -157,9 +163,11 @@ public class TopologyTester implements Closeable {
     outputTopicConfig.put(topic.getName(),
         new TopicConfig<>(topic.getName(), topic.getKeySerde(), topic.getValueSerde(),
             createEmptyKey, createEmptyValue));
+    return outputTopicConfig(topic);
   }
 
-  public <K, V> void configureStore(String storeName, Serde<K> keySerde, Serde<V> valueSerde,
+  public <K, V> TopicConfig<K, V> configureStore(String storeName, Serde<K> keySerde,
+      Serde<V> valueSerde,
       Callable<K> createEmptyKey, Callable<V> createEmptyValue) {
     if (storeConfig.containsKey(storeName)) {
       throw new IllegalStateException(
@@ -167,6 +175,7 @@ public class TopologyTester implements Closeable {
     }
     storeConfig.put(storeName,
         new TopicConfig<>(storeName, keySerde, valueSerde, createEmptyKey, createEmptyValue));
+    return storeConfig(storeName);
   }
 
   public <K, V> void pipeInput(Topic<K, V> topic, List<Map<String, String>> records)
@@ -219,11 +228,16 @@ public class TopologyTester implements Closeable {
     return false;
   }
 
+  public <K, V> void assertOutputList(Topic<K, V> topic, List<Map<String, String>> expectedRecords,
+      boolean lenientOrder) throws Exception {
+    assertOutputList(topic, expectedRecords, lenientOrder, Collections.emptySet());
+  }
+
   /**
    * maps within list of expected records may NOT have different key sets
    */
   public <K, V> void assertOutputList(Topic<K, V> topic, List<Map<String, String>> expectedRecords,
-      boolean lenientOrder) throws Exception {
+      boolean lenientOrder, Set<String> extraFieldsToCompareWithDefaults) throws Exception {
     TopicConfig<K, V> topicConfig = outputTopicConfig(topic);
 
     List<KeyValue<K, V>> output = readOutput(topicConfig);
@@ -237,28 +251,70 @@ public class TopologyTester implements Closeable {
     }
     Set<String> expectedFields = AliasHelper
         .expandAliasKeys(expectedRecords.get(0).keySet(), topicConfig.getAliases());
+    expectedFields.addAll(
+        AliasHelper.expandAliasKeys(extraFieldsToCompareWithDefaults, topicConfig.getAliases()));
 
     // comparableActualOutput has only necessary fields populated, as defined by 'expectedFields'
     List<KeyValue<K, V>> comparableActualOutput = stripUnnecessaryFields(output,
         expectedFields, topicConfig);
 
+    List<KeyValue<K, V>> expectedOutput = new ArrayList<>(
+        expectedRecordsFromMaps(topicConfig, expectedRecords,
+            extraFieldsToCompareWithDefaults));
+
+    assertListEquals(expectedOutput, comparableActualOutput, lenientOrder);
+  }
+
+  protected <V, K> Collection<KeyValue<K, V>> expectedRecordsFromMaps(TopicConfig<K, V> topicConfig,
+      Collection<Map<String, String>> expectedRecordMaps, Set<String> extraFieldsToDefault)
+      throws Exception {
+
     List<KeyValue<K, V>> expectedOutput = new ArrayList<>();
-    for (Map<String, String> expectedRecordMap : expectedRecords) {
-      expectedRecordMap = AliasHelper.expandAliasKeys(expectedRecordMap, topicConfig.getAliases());
+    if (expectedRecordMaps.isEmpty()) {
+      return expectedOutput;
+    }
+
+    Set<String> expectedFields = expectedRecordMaps.iterator().next().keySet();
+
+    // verify that all maps in expectedRecordMaps have the same set of fields
+    for (Map<String, String> expectedRecordMap : expectedRecordMaps) {
       if (!expectedRecordMap.keySet().equals(expectedFields)) {
         throw new IllegalArgumentException(String.format("Expected records (as maps) have "
                 + "differing key sets.\n\tExpected: %s\n\tActual: %s", expectedFields,
             expectedRecordMap.keySet()));
       }
+    }
+
+    Set<String> fieldsToMakeDefault = AliasHelper
+        .expandAliasKeys(extraFieldsToDefault, topicConfig.getAliases());
+    Map<String, String> topicDefaultValues = AliasHelper
+        .expandAliasKeys(topicConfig.getDefaultValues(), topicConfig.getAliases());
+
+    for (Map<String, String> expectedRecordMap : expectedRecordMaps) {
+      expectedRecordMap = AliasHelper.expandAliasKeys(expectedRecordMap, topicConfig.getAliases());
+
+      // add default values to expectedRecordMap if the field doesn't exist already
+      for (String fieldToDefault : fieldsToMakeDefault) {
+        expectedRecordMap.computeIfAbsent(fieldToDefault,
+            key -> Optional.ofNullable(topicDefaultValues.get(key)).orElseThrow(
+                () -> new IllegalArgumentException(String.format(
+                    "Cannot do an explicit compare on field '%s' because default value is not set",
+                    fieldToDefault))));
+      }
 
       expectedOutput.add(createRecordWithAvroUtil(expectedRecordMap, topicConfig));
     }
 
-    assertListEquals(expectedOutput, comparableActualOutput, lenientOrder);
+    return expectedOutput;
   }
 
   public void assertStoreContain(String storeName, Collection<Map<String, String>> expected)
       throws Exception {
+    assertStoreContain(storeName, expected, Collections.emptySet());
+  }
+
+  public void assertStoreContain(String storeName, Collection<Map<String, String>> expected,
+      Set<String> extraFieldsToDefault) throws Exception {
     TopicConfig<Object, Object> storeConfig = storeConfig(storeName);
 
     if (expected.isEmpty()) {
@@ -267,7 +323,14 @@ public class TopologyTester implements Closeable {
 
     KeyValueStore<Object, Object> store = driver.getKeyValueStore(storeName);
 
+    Collection<KeyValue<Object, Object>> expectedRecords = expectedRecordsFromMaps(storeConfig,
+        expected, extraFieldsToDefault);
+
     Set<String> expectedFields = expected.iterator().next().keySet();
+    expectedFields = AliasHelper.expandAliasKeys(expectedFields, storeConfig.getAliases());
+    expectedFields
+        .addAll(AliasHelper.expandAliasKeys(extraFieldsToDefault, storeConfig.getAliases()));
+
     List<KeyValue<Object, Object>> storeContentsStripped = new ArrayList<>();
     try (KeyValueIterator<Object, Object> iter = store.all()) {
       while (iter.hasNext()) {
@@ -275,21 +338,20 @@ public class TopologyTester implements Closeable {
       }
     }
 
-    for (Map<String, String> expectedEntryMap : expected) {
-      if (!expectedEntryMap.keySet().equals(expectedFields)) {
-        throw new IllegalArgumentException(String.format("All maps in Collection of maps must "
-                + "have the same expected fields. \n\tExpected fields: %s\n\tActual Fields: %s",
-            expectedFields.toString(), expectedEntryMap.toString()));
-      }
-      KeyValue<Object, Object> expectedRecord = createRecordWithAvroUtil(expectedEntryMap,
-          storeConfig);
-      assertTrue(String.format("Store does not contain record with values: %s",
-          expectedEntryMap.toString()), storeContentsStripped.contains(expectedRecord));
+    for (KeyValue<Object, Object> expectedRecord : expectedRecords) {
+      assertTrue(String.format("Store does not contain record with matching fields %s; values: %s",
+          expectedFields.toString(), expectedRecord),
+          storeContentsStripped.contains(expectedRecord));
     }
   }
 
   public void assertStoreNotContain(String storeName, Collection<Map<String, String>> unexpected)
       throws Exception {
+    assertStoreNotContain(storeName, unexpected, Collections.emptySet());
+  }
+
+  public void assertStoreNotContain(String storeName, Collection<Map<String, String>> unexpected,
+      Set<String> extraFieldsToDefault) throws Exception {
     TopicConfig<Object, Object> storeConfig = storeConfig(storeName);
 
     if (unexpected.isEmpty()) {
@@ -297,8 +359,14 @@ public class TopologyTester implements Closeable {
     }
 
     KeyValueStore<Object, Object> store = driver.getKeyValueStore(storeName);
+    Collection<KeyValue<Object, Object>> unexpectedRecords = expectedRecordsFromMaps(storeConfig,
+        unexpected, extraFieldsToDefault);
 
     Set<String> expectedFields = unexpected.iterator().next().keySet();
+
+    expectedFields = AliasHelper.expandAliasKeys(expectedFields, storeConfig.getAliases());
+    expectedFields
+        .addAll(AliasHelper.expandAliasKeys(extraFieldsToDefault, storeConfig.getAliases()));
     List<KeyValue<Object, Object>> storeContentsStripped = new ArrayList<>();
     try (KeyValueIterator<Object, Object> iter = store.all()) {
       while (iter.hasNext()) {
@@ -306,16 +374,9 @@ public class TopologyTester implements Closeable {
       }
     }
 
-    for (Map<String, String> expectedEntryMap : unexpected) {
-      if (!expectedEntryMap.keySet().equals(expectedFields)) {
-        throw new IllegalArgumentException(String.format("All maps in Collection of maps must "
-                + "have the same expected fields. \n\tExpected fields: %s\n\tActual Fields: %s",
-            expectedFields.toString(), expectedEntryMap.toString()));
-      }
-      KeyValue<Object, Object> unexpectedRecord = createRecordWithAvroUtil(expectedEntryMap,
-          storeConfig);
-      assertFalse(String.format("Store contains record with values: %s:\n\t%s",
-          expectedEntryMap.toString(), unexpectedRecord),
+    for (KeyValue<Object, Object> unexpectedRecord : unexpectedRecords) {
+      assertFalse(String.format("Store does not contain record with matching fields %s; values: %s",
+          expectedFields.toString(), unexpectedRecord),
           storeContentsStripped.contains(unexpectedRecord));
     }
   }
@@ -339,6 +400,12 @@ public class TopologyTester implements Closeable {
 
   public <K, V> void assertOutputMap(Topic<K, V> topic,
       Collection<Map<String, String>> expectedRecords) throws Exception {
+    assertOutputMap(topic, expectedRecords, Collections.emptySet());
+  }
+
+  public <K, V> void assertOutputMap(Topic<K, V> topic,
+      Collection<Map<String, String>> expectedRecords, Set<String> extraFieldsToCompareWithDefaults)
+      throws Exception {
     TopicConfig<K, V> topicConfig = outputTopicConfig(topic);
 
     List<KeyValue<K, V>> output = readOutput(topicConfig);
@@ -362,20 +429,14 @@ public class TopologyTester implements Closeable {
 
     Set<String> expectedFields = AliasHelper
         .expandAliasKeys(expectedRecords.iterator().next().keySet(), topicConfig.getAliases());
+    expectedFields.addAll(
+        AliasHelper.expandAliasKeys(extraFieldsToCompareWithDefaults, topicConfig.getAliases()));
 
     List<KeyValue<K, V>> comparableOutput = stripUnnecessaryFields(reducedOutput, expectedFields,
         topicConfig);
 
-    List<KeyValue<K, V>> expectedOutput = new ArrayList<>();
-    for (Map<String, String> expectedRecordMap : expectedRecords) {
-      if (!expectedRecordMap.keySet().equals(expectedFields)) {
-        throw new IllegalArgumentException(String.format("Expected records (as maps) have "
-                + "differing key sets.\n\tExpected: %s\n\tActual: %s", expectedFields,
-            expectedRecordMap.keySet()));
-      }
-
-      expectedOutput.add(createRecordWithAvroUtil(expectedRecordMap, topicConfig));
-    }
+    Collection<KeyValue<K, V>> expectedOutput = expectedRecordsFromMaps(topicConfig,
+        expectedRecords, extraFieldsToCompareWithDefaults);
 
     assertListEquals(expectedOutput, comparableOutput, true);
   }
@@ -410,7 +471,7 @@ public class TopologyTester implements Closeable {
     return strippedRecord;
   }
 
-  private void assertListEquals(List<?> expected, List<?> actual,
+  private void assertListEquals(Collection<?> expected, Collection<?> actual,
       boolean lenientOrder) {
     try {
       if (lenientOrder) {
