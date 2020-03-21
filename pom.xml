@@ -10,6 +10,7 @@
     <module>trade-normalizer</module>
     <module>core-messaging</module>
     <module>core</module>
+    <module>query-shell</module>
   </modules>
 
   <parent>

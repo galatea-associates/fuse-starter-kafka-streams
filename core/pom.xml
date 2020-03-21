@@ -15,6 +15,11 @@
       <groupId>org.apache.kafka</groupId>
       <artifactId>kafka-streams</artifactId>
     </dependency>
+
+    <dependency>
+      <groupId>io.confluent</groupId>
+      <artifactId>kafka-streams-avro-serde</artifactId>
+    </dependency>
   </dependencies>
 
 </project>

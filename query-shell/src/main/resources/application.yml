@@ -1,0 +1,6 @@
+messaging:
+  schema-registry-url: http://192.168.0.254:8081
+  bootstrap-server: 192.168.0.254:29092
+  state-dir: target/state-dir
+
+logging.level.ROOT: ERROR
