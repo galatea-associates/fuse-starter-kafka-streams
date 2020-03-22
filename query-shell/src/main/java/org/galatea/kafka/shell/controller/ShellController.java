@@ -1,21 +1,22 @@
 package org.galatea.kafka.shell.controller;
 
-import com.apple.foundationdb.tuple.Tuple;
 import java.lang.reflect.UndeclaredThrowableException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
+import java.util.Collection;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ExecutionException;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.streams.KeyValue;
 import org.galatea.kafka.shell.config.MessagingConfig;
+import org.galatea.kafka.shell.config.StandardWithVarargsResolver;
 import org.galatea.kafka.shell.consumer.ConsumerThreadController;
-import org.galatea.kafka.shell.stores.OffsetTrackingRecordStore;
-import org.galatea.kafka.shell.util.Extractor;
-import org.rocksdb.RocksIterator;
+import org.galatea.kafka.shell.domain.DbRecord;
+import org.galatea.kafka.shell.domain.DbRecordKey;
+import org.galatea.kafka.shell.stores.ConsumerRecordTable;
 import org.springframework.shell.standard.ShellComponent;
 import org.springframework.shell.standard.ShellMethod;
 import org.springframework.shell.standard.ShellOption;
@@ -24,11 +25,9 @@ import org.springframework.shell.standard.ShellOption;
 @ShellComponent
 public class ShellController {
 
-  private final Map<String, String> storeAlias = new HashMap<>();
   private final RecordStoreController recordStoreController;
   private final ConsumerThreadController consumerThreadController;
   private final StatusController statusController;
-  private final MessagingConfig messagingConfig;
 
   public ShellController(RecordStoreController recordStoreController,
       ConsumerThreadController consumerThreadController, StatusController statusController,
@@ -36,7 +35,7 @@ public class ShellController {
     this.recordStoreController = recordStoreController;
     this.consumerThreadController = consumerThreadController;
     this.statusController = statusController;
-    this.messagingConfig = messagingConfig;
+
     System.out
         .println(String.format("Connected to brokers: %s", messagingConfig.getBootstrapServer()));
     System.out.println(
@@ -49,22 +48,19 @@ public class ShellController {
     return statusController.printableStatus();
   }
 
+
   @ShellMethod("Search a store using REGEX")
   public String query(
       @ShellOption String storeName,
-      @ShellOption(valueProvider = Extractor.class) String regex) {
+      @ShellOption(arity = StandardWithVarargsResolver.VARARGS_ARITY, defaultValue = "NONE") String[] regex) {
 
     StringBuilder ob = new StringBuilder();
-    if (!recordStoreController.storeExist(storeName) && !storeAlias.containsKey(storeName)) {
+
+    if (!recordStoreController.tableExist(storeName)) {
       return ob.append("Store or alias ").append(storeName).append(" does not exist").toString();
-    } else if (!recordStoreController.storeExist(storeName)) {
-      storeName = storeAlias.get(storeName);
     }
 
-    OffsetTrackingRecordStore episodeStore = recordStoreController.getStores().get(storeName);
-
-    RocksIterator iterator = episodeStore.getUnderlyingDb().newIterator();
-    iterator.seekToFirst();
+    ConsumerRecordTable store = recordStoreController.getTable(storeName);
 
     List<Pattern> patterns = new ArrayList<>();
     for (String pattern : regex) {
@@ -73,36 +69,34 @@ public class ShellController {
 
     ob.append("Results for regex set '").append(Arrays.toString(regex)).append("':\n");
     Instant startTime = Instant.now();
-    long numResults = 0;
 
-    while (iterator.isValid()) {
-      Tuple valueTuple = Tuple.fromBytes(iterator.value());
-      boolean recordMatches = true;
-      String recordString = valueTuple.getString(3);
-      for (Pattern pattern : patterns) {
-        if (!pattern.matcher(recordString).find()) {
-          recordMatches = false;
-          break;
-        }
-      }
+    Collection<KeyValue<DbRecordKey, DbRecord>> results = new ArrayList<>();
+    Predicate<KeyValue<DbRecordKey, DbRecord>> predicate = predicateFromRegexPatterns(patterns);
+    store.doWith(predicate, results::add);
+    Instant endTime = Instant.now();
 
-      if (recordMatches) {
-        ob.append(Instant.ofEpochMilli(valueTuple.getLong(2)))
-            .append(": ").append(recordString).append("\n");
-      }
-      iterator.next();
-    }
+    results.forEach(entry -> ob.append(Instant.ofEpochMilli(entry.value.getRecordTimestamp().get()))
+        .append(": ").append(entry.value.getStringValue()).append("\n"));
 
-    ob.append("\n").append(numResults).append(" Results found in ")
-        .append(readableTimeSince(startTime)).append("\n");
-    iterator.close();
+    ob.append("\n").append(results.size()).append(" Results found in ")
+        .append(readableDuration(startTime, endTime)).append("\n");
 
-    // invoke service
     return ob.toString();
   }
 
-  private String readableTimeSince(Instant startTime) {
-    long duration = Instant.now().toEpochMilli() - startTime.toEpochMilli();
+  private Predicate<KeyValue<DbRecordKey, DbRecord>> predicateFromRegexPatterns(List<Pattern> patterns) {
+    return dbRecord -> {
+      for (Pattern pattern : patterns) {
+        if (!pattern.matcher(dbRecord.value.getStringValue().get()).find()) {
+          return false;
+        }
+      }
+      return true;
+    };
+  }
+
+  private String readableDuration(Instant startTime, Instant endTime) {
+    long duration = endTime.toEpochMilli() - startTime.toEpochMilli();
     if (duration > 1000 * 60) {
       return String.format("%.1fmin", (double) duration / 60000);
     } else if (duration > 1000) {
@@ -125,25 +119,26 @@ public class ShellController {
     StringBuilder ob = new StringBuilder();
     try {
       boolean effectiveCompact = Boolean.parseBoolean(compact);
-      if (recordStoreController.storeExist(topicName, effectiveCompact)) {
+      if (recordStoreController.tableExist(topicName, effectiveCompact)) {
         return ob.append("Already listening to topic ").append(topicName)
             .append(" with config compact=").append(effectiveCompact).toString();
       }
-      OffsetTrackingRecordStore store = recordStoreController.newStore(topicName, effectiveCompact);
+      ConsumerRecordTable store = recordStoreController.newTable(topicName, effectiveCompact);
       consumerThreadController.addStoreAssignment(topicName, store);
+      // TODO: check if topic exists before trying to add
       consumerThreadController.addTopicToAssignment(topicName);
 
       boolean createAlias = false;
       if (alias != null) {
-        if (recordStoreController.storeExist(alias)) {
+        if (recordStoreController.tableExist(alias)) {
           ob.append("WARN: could not use alias ").append(alias)
               .append(" since a store exists with that name\n");
         } else {
           createAlias = true;
-          storeAlias.put(alias, store.getStoreName());
+          recordStoreController.setAlias(store.getName(), alias);
         }
       }
-      ob.append("Created store ").append(store.getStoreName());
+      ob.append("Created store ").append(store.getName());
       if (createAlias) {
         ob.append(" with alias ").append(alias);
       }

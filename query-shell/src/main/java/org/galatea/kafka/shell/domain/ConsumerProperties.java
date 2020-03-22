@@ -8,7 +8,8 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import lombok.Data;
 import org.apache.kafka.common.TopicPartition;
-import org.galatea.kafka.shell.stores.OffsetTrackingRecordStore;
+import org.galatea.kafka.shell.consumer.request.ConsumerRequest;
+import org.galatea.kafka.shell.stores.ConsumerRecordTable;
 
 @Data
 public class ConsumerProperties {
@@ -17,7 +18,7 @@ public class ConsumerProperties {
   private boolean assignmentUpdated = false;
   private Set<TopicPartition> assignment = new HashSet<>();
   private Set<TopicPartition> seekBeginningAssignment = new HashSet<>();
-  private Map<String, Set<OffsetTrackingRecordStore>> storeSubscription = new HashMap<>();
+  private Map<String, Set<ConsumerRecordTable>> storeSubscription = new HashMap<>();
   private Map<TopicPartition, Long> latestOffset = new HashMap<>();
   private Map<TopicPartition, Long> consumedMessages = new HashMap<>();
 

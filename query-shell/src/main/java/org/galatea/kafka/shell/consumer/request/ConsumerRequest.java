@@ -1,4 +1,4 @@
-package org.galatea.kafka.shell.domain;
+package org.galatea.kafka.shell.consumer.request;
 
 import java.util.concurrent.Semaphore;
 import lombok.Getter;

@@ -7,17 +7,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Semaphore;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InvalidTopicException;
-import org.galatea.kafka.shell.domain.ConsumerOffsetRequest;
+import org.galatea.kafka.shell.consumer.request.ConsumerOffsetRequest;
 import org.galatea.kafka.shell.domain.ConsumerProperties;
 import org.galatea.kafka.shell.domain.TopicPartitionOffsets;
-import org.galatea.kafka.shell.stores.OffsetTrackingRecordStore;
+import org.galatea.kafka.shell.stores.ConsumerRecordTable;
 import org.springframework.stereotype.Component;
 
 @Slf4j
@@ -86,12 +85,12 @@ public class ConsumerThreadController {
         .collect(Collectors.toList());
   }
 
-  private Set<OffsetTrackingRecordStore> subscribedStores(String topic) {
+  private Set<ConsumerRecordTable> subscribedStores(String topic) {
     return runner.getProperties().getStoreSubscription()
         .computeIfAbsent(topic, s -> new HashSet<>());
   }
 
-  public void addStoreAssignment(String topic, OffsetTrackingRecordStore store) {
+  public void addStoreAssignment(String topic, ConsumerRecordTable store) {
     subscribedStores(topic).add(store);
   }
 

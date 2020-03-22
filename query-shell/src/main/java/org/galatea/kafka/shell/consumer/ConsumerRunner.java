@@ -14,9 +14,13 @@ import org.apache.avro.generic.GenericRecord;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.streams.KeyValue;
+import org.galatea.kafka.shell.consumer.request.ConsumerRequest;
 import org.galatea.kafka.shell.domain.ConsumerProperties;
-import org.galatea.kafka.shell.domain.ConsumerRequest;
-import org.galatea.kafka.shell.stores.OffsetTrackingRecordStore;
+import org.galatea.kafka.shell.domain.DbRecord;
+import org.galatea.kafka.shell.domain.DbRecordKey;
+import org.galatea.kafka.shell.stores.ConsumerRecordTable;
+import org.galatea.kafka.starter.util.Translator;
 import org.springframework.stereotype.Component;
 
 @Slf4j
@@ -28,7 +32,8 @@ public class ConsumerRunner implements Runnable {
   private final ConsumerProperties properties = new ConsumerProperties();
   private final Consumer<GenericRecord, GenericRecord> consumer;
   private static final Duration POLL_MAX_DURATION = Duration.ofSeconds(1);
-  private final Set<OffsetTrackingRecordStore> stores = new HashSet<>();
+  private final Set<ConsumerRecordTable> stores = new HashSet<>();
+  private final Translator<ConsumerRecord<GenericRecord, GenericRecord>, KeyValue<DbRecordKey, DbRecord>> localRecordTranslator;
 
   @Override
   public void run() {
@@ -49,7 +54,8 @@ public class ConsumerRunner implements Runnable {
       }
 
       consumer.poll(POLL_MAX_DURATION).forEach(record -> {
-        subscribedStores(record.topic()).forEach(store -> store.addRecord(record));
+        KeyValue<DbRecordKey, DbRecord> localRecord = localRecordTranslator.apply(record);
+        subscribedStores(record.topic()).forEach(store -> store.addRecord(localRecord));
         updateStatistics(record);
       });
 
@@ -69,7 +75,7 @@ public class ConsumerRunner implements Runnable {
     properties.getLatestOffset().put(topicPartition, record.offset());
   }
 
-  private Set<OffsetTrackingRecordStore> subscribedStores(String topic) {
+  private Set<ConsumerRecordTable> subscribedStores(String topic) {
     return properties.getStoreSubscription().computeIfAbsent(topic, s -> new HashSet<>());
   }
 

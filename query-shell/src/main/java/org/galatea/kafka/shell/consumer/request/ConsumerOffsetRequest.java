@@ -1,10 +1,11 @@
-package org.galatea.kafka.shell.domain;
+package org.galatea.kafka.shell.consumer.request;
 
 import java.util.HashMap;
 import java.util.Map;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.common.TopicPartition;
+import org.galatea.kafka.shell.domain.TopicPartitionOffsets;
 
 public class ConsumerOffsetRequest extends
     ConsumerRequest<Map<TopicPartition, TopicPartitionOffsets>> {

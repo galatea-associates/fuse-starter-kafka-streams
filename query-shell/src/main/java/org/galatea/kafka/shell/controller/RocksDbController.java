@@ -7,10 +7,11 @@ import java.util.HashMap;
 import java.util.Map;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.FileUtils;
+import org.galatea.kafka.shell.config.MessagingConfig;
 import org.rocksdb.Options;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 @Slf4j
@@ -21,17 +22,19 @@ public class RocksDbController implements Closeable {
   private final Map<String, RocksDB> stores = new HashMap<>();
   private static final Options DEFAULT_OPTIONS = new Options().setCreateIfMissing(true);
 
-  @Value("${messaging.state-dir}")
-  private String stateDir;
+  private final MessagingConfig messagingConfig;
 
-  public RocksDbController() {
+  public RocksDbController(MessagingConfig messagingConfig) throws IOException {
+    this.messagingConfig = messagingConfig;
+    // delete old stores at startup
+    FileUtils.deleteDirectory(new File(messagingConfig.getStateDir()));
     // a static method that loads the RocksDB C++ library.
     RocksDB.loadLibrary();
-    // TODO: load existing stores on startup
+
   }
 
   public RocksDB newStore(String storeName) throws RocksDBException {
-    String storeDir = stateDir + "\\" + fileFriendlyString(storeName);
+    String storeDir = messagingConfig.getStateDir() + "/" + fileFriendlyString(storeName);
     File dir = new File(storeDir);
     if (!dir.mkdirs()) {
       log.warn("Unable to create state dir {}", dir);

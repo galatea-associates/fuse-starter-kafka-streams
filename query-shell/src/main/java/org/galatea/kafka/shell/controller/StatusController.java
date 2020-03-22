@@ -31,8 +31,8 @@ public class StatusController {
 
   private Map<String, StoreStatus> storeStatus() {
 
-    return recordStoreController.getStores().values().stream()
-        .map(store -> Pair.of(store.getStoreName(), store.status()))
+    return recordStoreController.getTables().values().stream()
+        .map(store -> Pair.of(store.getTable().getName(), store.getTable().status()))
         .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
   }
 

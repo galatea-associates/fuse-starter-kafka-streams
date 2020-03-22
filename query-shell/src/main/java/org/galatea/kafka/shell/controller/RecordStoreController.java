@@ -4,8 +4,12 @@ import java.util.HashMap;
 import java.util.Map;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
-import org.galatea.kafka.shell.stores.OffsetTrackingRecordStore;
+import org.apache.kafka.common.serialization.Serde;
+import org.galatea.kafka.shell.domain.DbRecord;
+import org.galatea.kafka.shell.domain.DbRecordKey;
+import org.galatea.kafka.shell.stores.ConsumerRecordTable;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.springframework.stereotype.Component;
@@ -15,55 +19,77 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class RecordStoreController {
 
-  private static final String OFFSET_STORE_NAME = "offset";
   private final RocksDbController rocksDbController;
-  private RocksDB offsetDb;
   @Getter
-  private final Map<String, OffsetTrackingRecordStore> stores = new HashMap<>();
+  private final Map<String, TableDetails> tables = new HashMap<>();
+  private final Map<String, String> aliases = new HashMap<>();
+  private final Serde<DbRecordKey> compactKeySerde;
+  private final Serde<DbRecordKey> allRecordKeySerde;
+  private final Serde<DbRecord> valueSerde;
 
-  public boolean storeExist(String topicname, boolean compact) {
-    return stores.containsKey(storeName(topicname, compact));
+  public ConsumerRecordTable getTable(String tableName) {
+    if (tables.containsKey(tableName)) {
+      return tables.get(tableName).getTable();
+    } else if (aliases.containsKey(tableName) && tables.containsKey(aliases.get(tableName))) {
+      return tables.get(aliases.get(tableName)).getTable();
+    }
+    return null;
   }
 
-  public boolean storeExist(String storeName) {
-    return stores.containsKey(storeName);
+  public boolean tableExist(String topicname, boolean compact) {
+    return tableExist(tableName(topicname, compact));
   }
 
-  private String storeName(String topic, boolean compact) {
+  public boolean tableExist(String tableName) {
+    return tables.containsKey(tableName) || tables.containsKey(aliases.get(tableName));
+  }
+
+  private String tableName(String topic, boolean compact) {
     if (compact) {
       topic += "-compact";
     }
     return topic;
   }
 
-  public OffsetTrackingRecordStore newStore(String topicName, boolean compact) {
-    setupOffsetDb();
-    String storeName = storeName(topicName, compact);
+  public boolean setAlias(String tableName, String alias) {
+    if (tables.containsKey(tableName)) {
+      tables.get(tableName).setAlias(alias);
+      aliases.put(alias, tableName);
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  public ConsumerRecordTable newTable(String topicName, boolean compact) {
+    String tableName = tableName(topicName, compact);
+    Serde<DbRecordKey> keySerde = this.allRecordKeySerde;
+    if (compact) {
+      keySerde = this.compactKeySerde;
+    }
     try {
-      if (stores.containsKey(storeName)) {
+      if (tables.containsKey(tableName)) {
         log.info("Store already exists, doing nothing.");
-        return stores.get(storeName);
+        return tables.get(tableName).getTable();
       }
-      RocksDB rocksDB = rocksDbController.newStore(storeName);
-      OffsetTrackingRecordStore store = new OffsetTrackingRecordStore(storeName,
-          compact, rocksDB, offsetDb);
-      stores.put(storeName, store);
-      return store;
+      RocksDB rocksDB = rocksDbController.newStore(tableName);
+      ConsumerRecordTable table = new ConsumerRecordTable(tableName, keySerde, this.valueSerde,
+          rocksDB);
+      tables.put(tableName, new TableDetails(table));
+      return table;
 
     } catch (RocksDBException e) {
-      log.error("Could not initialize store {}", storeName, e);
+      log.error("Could not initialize store {}", tableName, e);
       throw new IllegalStateException(e);
     }
   }
 
-  private void setupOffsetDb() {
-    if (offsetDb == null) {
-      try {
-        offsetDb = rocksDbController.newStore(OFFSET_STORE_NAME);
-      } catch (RocksDBException e) {
-        log.error("Could not initialize Offset store {}", OFFSET_STORE_NAME, e);
-        throw new IllegalStateException(e);
-      }
-    }
+  @Getter
+  @RequiredArgsConstructor
+  public static class TableDetails {
+
+    private final ConsumerRecordTable table;
+    @Setter
+    private String alias = null;
   }
 }
