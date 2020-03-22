@@ -5,18 +5,27 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.ConsumerGroupListing;
+import org.apache.kafka.clients.admin.ListTopicsResult;
 import org.apache.kafka.streams.KeyValue;
+import org.apache.logging.log4j.util.Strings;
 import org.galatea.kafka.shell.config.MessagingConfig;
 import org.galatea.kafka.shell.config.StandardWithVarargsResolver;
 import org.galatea.kafka.shell.consumer.ConsumerThreadController;
 import org.galatea.kafka.shell.domain.DbRecord;
 import org.galatea.kafka.shell.domain.DbRecordKey;
 import org.galatea.kafka.shell.stores.ConsumerRecordTable;
+import org.galatea.kafka.shell.util.ListEntityFunction;
 import org.springframework.shell.standard.ShellComponent;
 import org.springframework.shell.standard.ShellMethod;
 import org.springframework.shell.standard.ShellOption;
@@ -28,13 +37,23 @@ public class ShellController {
   private final RecordStoreController recordStoreController;
   private final ConsumerThreadController consumerThreadController;
   private final StatusController statusController;
+  private final AdminClient adminClient;
+  private final static Map<String, ListEntityFunction> LIST_ENTITIES = new HashMap<>();
+
+  static {
+    LIST_ENTITIES.put("TOPIC", client -> Strings.join(client.listTopics().names().get(), '\n'));
+    LIST_ENTITIES
+        .put("CONSUMER-GROUP", client -> client.listConsumerGroups().all().get().stream().map(
+            ConsumerGroupListing::groupId).collect(Collectors.joining("\n")));
+  }
 
   public ShellController(RecordStoreController recordStoreController,
       ConsumerThreadController consumerThreadController, StatusController statusController,
-      MessagingConfig messagingConfig) {
+      MessagingConfig messagingConfig, AdminClient adminClient) {
     this.recordStoreController = recordStoreController;
     this.consumerThreadController = consumerThreadController;
     this.statusController = statusController;
+    this.adminClient = adminClient;
 
     System.out
         .println(String.format("Connected to brokers: %s", messagingConfig.getBootstrapServer()));
@@ -42,12 +61,10 @@ public class ShellController {
         String.format("Connected to schema registry: %s", messagingConfig.getSchemaRegistryUrl()));
   }
 
-  // TODO: live-updating status
   @ShellMethod("Get status of the service")
   public String status() throws InterruptedException {
     return statusController.printableStatus();
   }
-
 
   @ShellMethod("Search a store using REGEX")
   public String query(
@@ -84,7 +101,8 @@ public class ShellController {
     return ob.toString();
   }
 
-  private Predicate<KeyValue<DbRecordKey, DbRecord>> predicateFromRegexPatterns(List<Pattern> patterns) {
+  private Predicate<KeyValue<DbRecordKey, DbRecord>> predicateFromRegexPatterns(
+      List<Pattern> patterns) {
     return dbRecord -> {
       for (Pattern pattern : patterns) {
         if (!pattern.matcher(dbRecord.value.getStringValue().get()).find()) {
@@ -106,6 +124,15 @@ public class ShellController {
     }
   }
 
+  @ShellMethod("List entities")
+  public String list(@ShellOption String entity) throws Exception {
+    if (LIST_ENTITIES.containsKey(entity.toUpperCase())) {
+      return LIST_ENTITIES.get(entity.toUpperCase()).apply(adminClient);
+    }
+    System.err.println(String.format("Unknown entity to list: %s", entity));
+    return "";
+  }
+
   @ShellMethod("Listen to a topic")
   public String listen(
       @ShellOption String topicName,
@@ -120,12 +147,21 @@ public class ShellController {
     try {
       boolean effectiveCompact = Boolean.parseBoolean(compact);
       if (recordStoreController.tableExist(topicName, effectiveCompact)) {
-        return ob.append("Already listening to topic ").append(topicName)
-            .append(" with config compact=").append(effectiveCompact).toString();
+        System.err.println(String
+            .format("Already listening to topic %s with config compact=%s", topicName,
+                effectiveCompact));
+        return "";
       }
+
+      if (!topicExist(topicName)) {
+        System.err.println(String
+            .format("Topic %s does not exist. Use 'list topic' to get all topics available",
+                topicName));
+        return "";
+      }
+
       ConsumerRecordTable store = recordStoreController.newTable(topicName, effectiveCompact);
       consumerThreadController.addStoreAssignment(topicName, store);
-      // TODO: check if topic exists before trying to add
       consumerThreadController.addTopicToAssignment(topicName);
 
       boolean createAlias = false;
@@ -148,6 +184,12 @@ public class ShellController {
       System.err.println("Could not listen to topic: " + e.getCause().getMessage());
       return "";
     }
+  }
+
+  private boolean topicExist(String topicName) throws ExecutionException, InterruptedException {
+    ListTopicsResult listTopicsResult = adminClient.listTopics();
+    Set<String> topics = listTopicsResult.names().get();
+    return topics.contains(topicName);
   }
 
 }

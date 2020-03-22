@@ -19,46 +19,61 @@ import org.galatea.kafka.shell.domain.DbRecord;
 import org.galatea.kafka.shell.domain.DbRecordKey;
 import org.galatea.kafka.shell.stores.ConsumerRecordTable;
 import org.galatea.kafka.starter.util.Translator;
+import org.springframework.beans.BeansException;
+import org.springframework.boot.SpringApplication;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.ApplicationContextAware;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class ConsumerRunner implements Runnable {
+public class ConsumerRunner implements Runnable, ApplicationContextAware {
 
   @Getter
   private final ConsumerProperties properties = new ConsumerProperties();
   private final Consumer<GenericRecord, GenericRecord> consumer;
   private static final Duration POLL_MAX_DURATION = Duration.ofSeconds(1);
   private final Translator<ConsumerRecord<GenericRecord, GenericRecord>, KeyValue<DbRecordKey, DbRecord>> localRecordTranslator;
+  private ConfigurableApplicationContext applicationContext;
+
 
   @Override
   public void run() {
     log.info("Started Thread");
 
-    while (true) {
-      if (properties.isAssignmentUpdated()) {
-        log.info("Updating consumer assignment {}", properties.getAssignment());
-        updateConsumerAssignment(consumer, properties);
-        properties.setAssignmentUpdated(false);
-      }
-      if (properties.getAssignment().isEmpty()) {
-        trySleep(1000);
-        continue;
-      }
+    // TODO: do deserialization on a topic basis, to allow for dynamic definition of serdes to use
+    // TODO: also would allow the consumer to reject a topic due to invalid configuration without crashing
+    try {
+      while (true) {
+        if (properties.isAssignmentUpdated()) {
+          log.info("Updating consumer assignment {}", properties.getAssignment());
+          updateConsumerAssignment(consumer, properties);
+          properties.setAssignmentUpdated(false);
+        }
+        if (properties.getAssignment().isEmpty()) {
+          trySleep(1000);
+          continue;
+        }
 
-      consumer.poll(POLL_MAX_DURATION).forEach(record -> {
-        KeyValue<DbRecordKey, DbRecord> localRecord = localRecordTranslator.apply(record);
-        subscribedStores(record.topic()).forEach(store -> store.addRecord(localRecord));
-        updateStatistics(record);
-      });
+        consumer.poll(POLL_MAX_DURATION).forEach(record -> {
+          KeyValue<DbRecordKey, DbRecord> localRecord = localRecordTranslator.apply(record);
+          subscribedStores(record.topic()).forEach(store -> store.addRecord(localRecord));
+          updateStatistics(record);
+        });
 
-      if (!properties.getPendingRequests().isEmpty()) {
-        List<ConsumerRequest<?>> requests = new ArrayList<>();
-        properties.getPendingRequests().drainTo(requests);
-        requests.forEach(request -> request.internalFulfillRequest(consumer));
+        if (!properties.getPendingRequests().isEmpty()) {
+          List<ConsumerRequest<?>> requests = new ArrayList<>();
+          properties.getPendingRequests().drainTo(requests);
+          requests.forEach(request -> request.internalFulfillRequest(consumer));
+        }
+
       }
-
+    } catch (Exception e) {
+      System.err.println("Kafka consumer has crashed. Shell will be closed.");
+      e.printStackTrace();
+      System.exit(SpringApplication.exit(applicationContext, () -> 0));
     }
   }
 
@@ -80,7 +95,11 @@ public class ConsumerRunner implements Runnable {
     log.info("Updated consumer assignment: {}", properties);
 
     consumer.seekToBeginning(properties.getSeekBeginningAssignment());
+    // reset number of consumed messages for each partition that has been reset to 0
+    properties.getSeekBeginningAssignment()
+        .forEach(topicPartition -> properties.getConsumedMessages().put(topicPartition, 0L));
     log.info("Seek to beginning for {}", properties.getSeekBeginningAssignment());
+
     properties.getSeekBeginningAssignment().clear();
   }
 
@@ -91,5 +110,11 @@ public class ConsumerRunner implements Runnable {
       log.warn("Sleep interrupted: ", e);
       throw new IllegalStateException(e);
     }
+  }
+
+  @Override
+  public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
+
+    this.applicationContext = (ConfigurableApplicationContext) applicationContext;
   }
 }
