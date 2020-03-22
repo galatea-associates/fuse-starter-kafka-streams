@@ -2,11 +2,9 @@ package org.galatea.kafka.shell.consumer;
 
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,7 +30,6 @@ public class ConsumerRunner implements Runnable {
   private final ConsumerProperties properties = new ConsumerProperties();
   private final Consumer<GenericRecord, GenericRecord> consumer;
   private static final Duration POLL_MAX_DURATION = Duration.ofSeconds(1);
-  private final Set<ConsumerRecordTable> stores = new HashSet<>();
   private final Translator<ConsumerRecord<GenericRecord, GenericRecord>, KeyValue<DbRecordKey, DbRecord>> localRecordTranslator;
 
   @Override
@@ -43,9 +40,6 @@ public class ConsumerRunner implements Runnable {
       if (properties.isAssignmentUpdated()) {
         log.info("Updating consumer assignment {}", properties.getAssignment());
         updateConsumerAssignment(consumer, properties);
-        stores.clear();
-        stores.addAll(properties.getStoreSubscription().values().stream()
-            .flatMap(Collection::stream).collect(Collectors.toSet()));
         properties.setAssignmentUpdated(false);
       }
       if (properties.getAssignment().isEmpty()) {
