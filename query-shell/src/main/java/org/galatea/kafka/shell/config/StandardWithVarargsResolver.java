@@ -124,10 +124,14 @@ public class StandardWithVarargsResolver extends StandardParameterResolver {
             List<String> remainingWords = unusedWords.subList(offset, unusedWords.size()).stream()
                 .map(words::get).collect(Collectors.toList());
             String raw = String.join(",", remainingWords);
-            int from = unusedWords.get(offset);
-            int to = from + remainingWords.size();
-            result.put(parameter, ParameterRawValue.explicit(raw, null, from, to));
-            offset += remainingWords.size();
+            if (raw.isEmpty()) {
+              result.put(parameter, ParameterRawValue.explicit(raw, null, 0, 0));
+            } else {
+              int from = unusedWords.get(offset);
+              int to = from + remainingWords.size();
+              result.put(parameter, ParameterRawValue.explicit(raw, null, from, to));
+              offset += remainingWords.size();
+            }
           } else if (arity > 0 && (offset + arity) <= unusedWords.size()) {
             String raw = unusedWords.subList(offset, offset + arity).stream().map(words::get)
                 .collect(Collectors.joining(","));
