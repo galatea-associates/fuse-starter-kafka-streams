@@ -3,6 +3,7 @@ package org.galatea.kafka.shell.controller;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
@@ -11,6 +12,7 @@ import org.apache.kafka.common.serialization.Serde;
 import org.galatea.kafka.shell.domain.DbRecord;
 import org.galatea.kafka.shell.domain.DbRecordKey;
 import org.galatea.kafka.shell.stores.ConsumerRecordTable;
+import org.galatea.kafka.starter.util.Pair;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.springframework.stereotype.Component;
@@ -35,6 +37,15 @@ public class RecordStoreController {
       return tables.get(aliases.get(tableName)).getTable();
     }
     return null;
+  }
+
+  public Optional<String> aliasFor(String tableName) {
+    TableDetails details = tables.get(tableName);
+    if (details != null) {
+      return Optional.ofNullable(details.getAlias());
+    }
+
+    return Optional.empty();
   }
 
   public boolean tableExist(String topicname, boolean compact) {
@@ -73,9 +84,9 @@ public class RecordStoreController {
         log.info("Store already exists, doing nothing.");
         return tables.get(tableName).getTable();
       }
-      RocksDB rocksDB = rocksDbController.newStore(tableName);
+      Pair<String, RocksDB> rocksDB = rocksDbController.newStore(tableName);
       ConsumerRecordTable table = new ConsumerRecordTable(tableName, keySerde, this.valueSerde,
-          rocksDB, rocksDB.getName());
+          rocksDB.getValue(), rocksDB.getKey());
       tables.put(tableName, new TableDetails(table));
       return table;
 

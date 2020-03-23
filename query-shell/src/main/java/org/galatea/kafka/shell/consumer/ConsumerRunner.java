@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +40,7 @@ public class ConsumerRunner implements Runnable, ApplicationContextAware {
   private static final Duration POLL_MAX_DURATION = Duration.ofSeconds(1);
   private ConfigurableApplicationContext applicationContext;
   private Set<String> errorTopics = new HashSet<>();
+  private final AtomicLong messagesConsumed = new AtomicLong(0);
 
   @Override
   public void run() {
@@ -46,6 +48,8 @@ public class ConsumerRunner implements Runnable, ApplicationContextAware {
 
     try {
       while (true) {
+        properties.getHistoricalStatistic().reportConsumedMessageCount(messagesConsumed.get());
+
         if (!errorTopics.isEmpty()) {
           removeErrorTopicsFromAssignment(properties, errorTopics);
           errorTopics.forEach(errorTopic -> properties.getStoreSubscription().get(errorTopic)
@@ -72,6 +76,7 @@ public class ConsumerRunner implements Runnable, ApplicationContextAware {
         }
 
         consumer.poll(POLL_MAX_DURATION).forEach(record -> {
+          messagesConsumed.incrementAndGet();
           if (errorTopics.contains(record.topic())) {
             return;
           }

@@ -9,8 +9,8 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.serialization.Serde;
-import org.apache.kafka.streams.KeyValue;
 import org.galatea.kafka.shell.util.FileSystemUtil;
+import org.galatea.kafka.starter.util.Pair;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.RocksIterator;
@@ -33,7 +33,7 @@ public class RecordTable<K, V> implements Closeable {
 
   protected void validateStoreOpen() {
     if (!storeOpen) {
-      throw new IllegalStateException(String.format("Store %s is not open", db.getName()));
+      throw new IllegalStateException(String.format("Store %s is not open", name));
     }
   }
 
@@ -41,16 +41,16 @@ public class RecordTable<K, V> implements Closeable {
     return Optional.ofNullable(getRaw(key));
   }
 
-  public void doWithAll(Consumer<KeyValue<K, V>> doWithRecord) {
+  public void doWithAll(Consumer<Pair<K, V>> doWithRecord) {
     doWith(entry -> true, doWithRecord);
   }
 
-  public void doWith(Predicate<KeyValue<K, V>> predicate, Consumer<KeyValue<K, V>> doWithRecord) {
+  public void doWith(Predicate<Pair<K, V>> predicate, Consumer<Pair<K, V>> doWithRecord) {
     validateStoreOpen();
     RocksIterator it = db.newIterator();
     it.seekToFirst();
     while (it.isValid()) {
-      KeyValue<K, V> pair = KeyValue.pair(deserializeKey(it.key()), deserializeValue(it.value()));
+      Pair<K, V> pair = Pair.of(deserializeKey(it.key()), deserializeValue(it.value()));
       if (predicate.test(pair)) {
         doWithRecord.accept(pair);
       }
@@ -80,7 +80,7 @@ public class RecordTable<K, V> implements Closeable {
       byte[] bytes = db.get(serializedKey);
       return deserializeValue(bytes);
     } catch (RocksDBException e) {
-      log.error("Could not retrieve from store {}: using key {}", db.getName(), key, e);
+      log.error("Could not retrieve from store {}: using key {}", name, key, e);
       close();
       throw new IllegalStateException(e);
     }

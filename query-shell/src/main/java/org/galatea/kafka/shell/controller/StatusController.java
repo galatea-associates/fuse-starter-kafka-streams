@@ -98,19 +98,24 @@ public class StatusController {
     StringBuilder sb = new StringBuilder();
     sb.append("Stores:\n");
     List<List<String>> table = new ArrayList<>();
-    table.add(Arrays.asList("Name", "# Records"));
+    table.add(Arrays.asList("Name", "# Records", "Alias"));
     storeStatus().forEach(
         (key, value) -> table
-            .add(Arrays.asList(key, numberFormat.format(value.getMessagesInStore()))));
+            .add(Arrays.asList(key, numberFormat.format(value.getMessagesInStore()),
+                recordStoreController.aliasFor(key).orElse(""))));
     sb.append(printableTable(table));
 
-    sb.append("Consumer Topics:\n");
+    sb.append("Consumer Topics :\n");
     List<List<String>> topicTable = new ArrayList<>();
     topicTable.add(Arrays.asList("Topic", "Lag", "# Consumed"));
     consumerLagByTopic().forEach((topic, stat) -> topicTable
         .add(Arrays.asList(topic, numberFormat.format(stat.getLag()),
             numberFormat.format(stat.getConsumedMessages()))));
     sb.append(printableTable(topicTable));
+    sb.append(String
+        .format("%.2f msg/s\n",
+            consumerThreadController.consumerProperties().getHistoricalStatistic()
+                .messagesPerSecond()));
 
     Map<String, Exception> topicExceptions = consumerThreadController.consumerProperties()
         .getTopicExceptions();
@@ -149,7 +154,7 @@ public class StatusController {
         maxLines = Math.max(lines.length, maxLines);
       }
       for (int i = 1; i < maxLines; i++) {
-        table.add(rowNum+1, rowWithBlanks(row.size()));
+        table.add(rowNum + 1, rowWithBlanks(row.size()));
       }
       if (maxLines > 1) {
         for (int cellNum = 0; cellNum < row.size(); cellNum++) {
@@ -175,7 +180,8 @@ public class StatusController {
     }
     StringBuilder sb = new StringBuilder();
     int columns =
-        Arrays.stream(maxLengthForColumn).mapToInt(value -> value).sum() + table.get(0).size() * 3 - 1;
+        Arrays.stream(maxLengthForColumn).mapToInt(value -> value).sum() + table.get(0).size() * 3
+            - 1;
     sb.append("+");
     for (int i = 0; i < columns; i++) {
       sb.append("-");

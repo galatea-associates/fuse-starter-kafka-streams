@@ -22,6 +22,7 @@ public class ConsumerProperties {
   private Map<TopicPartition, Long> latestOffset = new HashMap<>();
   private Map<TopicPartition, Long> consumedMessages = new HashMap<>();
   private Map<String, Exception> topicExceptions = new HashMap<>();
+  private ConsumerHistoricalStatistic historicalStatistic = new ConsumerHistoricalStatistic();
 
   private BlockingQueue<ConsumerRequest<?>> pendingRequests = new LinkedBlockingQueue<>();
 }

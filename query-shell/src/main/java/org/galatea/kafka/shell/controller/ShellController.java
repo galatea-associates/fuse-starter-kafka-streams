@@ -17,8 +17,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.ConsumerGroupListing;
 import org.apache.kafka.clients.admin.ListTopicsResult;
-import org.apache.kafka.streams.KeyValue;
-import org.apache.logging.log4j.util.Strings;
 import org.galatea.kafka.shell.config.MessagingConfig;
 import org.galatea.kafka.shell.config.StandardWithVarargsResolver;
 import org.galatea.kafka.shell.domain.DbRecord;
@@ -26,6 +24,7 @@ import org.galatea.kafka.shell.domain.DbRecordKey;
 import org.galatea.kafka.shell.domain.SerdeType;
 import org.galatea.kafka.shell.stores.ConsumerRecordTable;
 import org.galatea.kafka.shell.util.ListEntityFunction;
+import org.galatea.kafka.starter.util.Pair;
 import org.springframework.shell.standard.ShellComponent;
 import org.springframework.shell.standard.ShellMethod;
 import org.springframework.shell.standard.ShellOption;
@@ -34,7 +33,6 @@ import org.springframework.shell.standard.ShellOption;
 @ShellComponent
 public class ShellController {
 
-  // TODO: Additional details in 'status' command such as table alias
   // TODO: add ability to create tables that are filtered on receiving messages
 
   private final RecordStoreController recordStoreController;
@@ -45,10 +43,10 @@ public class ShellController {
   private final static Map<String, ListEntityFunction> LIST_ENTITIES = new HashMap<>();
 
   static {
-    LIST_ENTITIES.put("TOPIC", client -> Strings.join(client.listTopics().names().get(), '\n'));
-    LIST_ENTITIES
-        .put("CONSUMER-GROUP", client -> client.listConsumerGroups().all().get().stream().map(
-            ConsumerGroupListing::groupId).collect(Collectors.joining("\n")));
+    LIST_ENTITIES.put("TOPIC",
+        client -> client.listTopics().names().get().stream().sorted().collect(Collectors.toList()));
+    LIST_ENTITIES.put("CONSUMER-GROUP", client -> client.listConsumerGroups().all().get().stream()
+        .map(ConsumerGroupListing::groupId).collect(Collectors.toList()));
   }
 
   public ShellController(RecordStoreController recordStoreController,
@@ -87,7 +85,7 @@ public class ShellController {
   @ShellMethod("Search a store using REGEX")
   public String query(
       @ShellOption String storeName,
-      @ShellOption(arity = StandardWithVarargsResolver.VARARGS_ARITY, defaultValue = "NONE") String[] regex) {
+      @ShellOption(arity = StandardWithVarargsResolver.VARARGS_ARITY) String[] regex) {
 
     StringBuilder ob = new StringBuilder();
 
@@ -105,15 +103,15 @@ public class ShellController {
     ob.append("Results for regex set '").append(Arrays.toString(regex)).append("':\n");
     Instant startTime = Instant.now();
 
-    Collection<KeyValue<DbRecordKey, DbRecord>> results = new ArrayList<>();
-    Predicate<KeyValue<DbRecordKey, DbRecord>> predicate = predicateFromRegexPatterns(patterns);
+    Collection<Pair<DbRecordKey, DbRecord>> results = new ArrayList<>();
+    Predicate<Pair<DbRecordKey, DbRecord>> predicate = predicateFromRegexPatterns(patterns);
     store.doWith(predicate, results::add);
     Instant endTime = Instant.now();
 
     results.forEach(entry -> ob
-        .append(readableTimestamp(entry.value.getRecordTimestamp().get())).append(":")
-        .append(" Key: ").append(entry.key.getByteKey())
-        .append(" Value: ").append(entry.value.getStringValue().get())
+        .append(readableTimestamp(entry.getValue().getRecordTimestamp().get())).append(":")
+        .append(" Key: ").append(entry.getKey().getByteKey())
+        .append(" Value: ").append(entry.getValue().getStringValue().get())
         .append("\n"));
 
     ob.append("\n").append(results.size()).append(" Results found in ")
@@ -126,11 +124,11 @@ public class ShellController {
     return String.format("%-24s", Instant.ofEpochMilli(timestamp));
   }
 
-  private Predicate<KeyValue<DbRecordKey, DbRecord>> predicateFromRegexPatterns(
+  private Predicate<Pair<DbRecordKey, DbRecord>> predicateFromRegexPatterns(
       List<Pattern> patterns) {
     return dbRecord -> {
       for (Pattern pattern : patterns) {
-        if (!pattern.matcher(dbRecord.value.getStringValue().get()).find()) {
+        if (!pattern.matcher(dbRecord.getValue().getStringValue().get()).find()) {
           return false;
         }
       }
@@ -150,21 +148,37 @@ public class ShellController {
   }
 
   @ShellMethod("List entities")
-  public String list(@ShellOption String entity) throws Exception {
+  public String list(@ShellOption String entity,
+      @ShellOption(arity = StandardWithVarargsResolver.VARARGS_ARITY) String[] regex)
+      throws Exception {
     if (LIST_ENTITIES.containsKey(entity.toUpperCase())) {
-      return LIST_ENTITIES.get(entity.toUpperCase()).apply(adminClient);
+      List<String> list = LIST_ENTITIES.get(entity.toUpperCase()).apply(adminClient);
+      return list.stream().filter(predicateFromRegex(regex)).collect(Collectors.joining("\n"));
     }
     System.err.println(String.format("Unknown entity to list: %s", entity));
     return "";
   }
 
+  private Predicate<String> predicateFromRegex(String[] regex) {
+    return entry -> {
+      List<Pattern> patterns = Arrays.stream(regex).map(Pattern::compile)
+          .collect(Collectors.toList());
+      for (Pattern pattern : patterns) {
+        if (!pattern.matcher(entry).find()) {
+          return false;
+        }
+      }
+      return true;
+    };
+  }
+
   @ShellMethod("Listen to a topic")
   public String listen(
-      @ShellOption String topicName,
-      @ShellOption String compact,
-      @ShellOption(defaultValue = "null") String alias,
-      @ShellOption(defaultValue = "AVRO") String keyType,
-      @ShellOption(defaultValue = "AVRO") String valueType)
+      @ShellOption("--topic-name") String topicName,
+      @ShellOption(value = "--compact", arity = 0) boolean compact,
+      @ShellOption(defaultValue = "null", value = "--alias") String alias,
+      @ShellOption(defaultValue = "AVRO", value = "--key-type") String keyType,
+      @ShellOption(defaultValue = "AVRO", value = "--value-type") String valueType)
       throws ExecutionException, InterruptedException {
     if (alias.equals("null")) {
       alias = null;
@@ -172,11 +186,9 @@ public class ShellController {
 
     StringBuilder ob = new StringBuilder();
     try {
-      boolean effectiveCompact = Boolean.parseBoolean(compact);
-      if (recordStoreController.tableExist(topicName, effectiveCompact)) {
+      if (recordStoreController.tableExist(topicName, compact)) {
         System.err.println(String
-            .format("Already listening to topic %s with config compact=%s", topicName,
-                effectiveCompact));
+            .format("Already listening to topic %s with config compact=%s", topicName, compact));
         return "";
       }
 
@@ -201,7 +213,7 @@ public class ShellController {
 
       kafkaSerdeController
           .registerTopicTypes(topicName, SerdeType.valueOf(keyType), SerdeType.valueOf(valueType));
-      ConsumerRecordTable store = recordStoreController.newTable(topicName, effectiveCompact);
+      ConsumerRecordTable store = recordStoreController.newTable(topicName, compact);
       consumerThreadController.addStoreAssignment(topicName, store);
       consumerThreadController.addTopicToAssignment(topicName);
 

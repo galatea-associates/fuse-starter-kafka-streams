@@ -9,6 +9,7 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.galatea.kafka.shell.config.MessagingConfig;
 import org.galatea.kafka.shell.util.FileSystemUtil;
+import org.galatea.kafka.starter.util.Pair;
 import org.rocksdb.Options;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
@@ -32,14 +33,14 @@ public class RocksDbController implements Closeable {
     RocksDB.loadLibrary();
   }
 
-  public RocksDB newStore(String storeName) throws RocksDBException, IOException {
+  public Pair<String, RocksDB> newStore(String storeName) throws RocksDBException, IOException {
     String storeDir = stateDirFor(storeName + "-" + (++lastStoreId));
     File dir = new File(storeDir);
     FileSystemUtil.deleteDirectory(dir);
     if (!dir.mkdirs()) {
       log.warn("Unable to create state dir {}", dir);
     }
-    return RocksDB.open(DEFAULT_OPTIONS, storeDir);
+    return Pair.of(storeDir, RocksDB.open(DEFAULT_OPTIONS, storeDir));
   }
 
   public String stateDirFor(String storeName) {
