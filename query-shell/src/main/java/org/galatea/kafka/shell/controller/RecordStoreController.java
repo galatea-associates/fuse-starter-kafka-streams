@@ -1,5 +1,6 @@
 package org.galatea.kafka.shell.controller;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import lombok.Getter;
@@ -74,14 +75,28 @@ public class RecordStoreController {
       }
       RocksDB rocksDB = rocksDbController.newStore(tableName);
       ConsumerRecordTable table = new ConsumerRecordTable(tableName, keySerde, this.valueSerde,
-          rocksDB);
+          rocksDB, rocksDB.getName());
       tables.put(tableName, new TableDetails(table));
       return table;
 
-    } catch (RocksDBException e) {
+    } catch (RocksDBException | IOException e) {
       log.error("Could not initialize store {}", tableName, e);
       throw new IllegalStateException(e);
     }
+  }
+
+  public void deleteTable(String name) {
+    if (tableExist(name)) {
+
+      TableDetails tableDetails = tables.get(name);
+      if (tableDetails.getAlias() != null) {
+        aliases.remove(tableDetails.getAlias());
+      }
+      ConsumerRecordTable table = tableDetails.getTable();
+      table.close(true);
+      tables.remove(name);
+    }
+
   }
 
   @Getter

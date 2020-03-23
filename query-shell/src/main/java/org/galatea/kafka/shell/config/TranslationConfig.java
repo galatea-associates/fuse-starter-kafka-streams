@@ -16,15 +16,15 @@ public class TranslationConfig {
   Translator<ConsumerRecord<GenericRecord, GenericRecord>, KeyValue<DbRecordKey, DbRecord>> localRecordTranslator() {
     return record -> {
       DbRecordKey key = new DbRecordKey();
-      key.getOffset().setInner(record.offset());
+      key.getOffset().setObject(record.offset());
       key.setByteKey(record.key().toString());
-      key.getPartition().setInner(record.partition());
+      key.getPartition().setObject(record.partition());
 
       DbRecord value = new DbRecord();
-      value.getRecordTimestamp().setInner(record.timestamp());
-      value.getPartition().setInner(record.partition());
-      value.getOffset().setInner(record.offset());
-      value.getStringValue().setInner("{Key: " + record.key() + ", Value: " + record.value() + "}");
+      value.getRecordTimestamp().setObject(record.timestamp());
+      value.getPartition().setObject(record.partition());
+      value.getOffset().setObject(record.offset());
+      value.getStringValue().setObject("{Key: " + record.key() + ", Value: " + record.value() + "}");
 
       return KeyValue.pair(key, value);
     };

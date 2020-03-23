@@ -1,6 +1,7 @@
 package org.galatea.kafka.shell.stores;
 
 import java.io.Closeable;
+import java.io.File;
 import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -9,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.streams.KeyValue;
+import org.galatea.kafka.shell.util.FileSystemUtil;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.RocksIterator;
@@ -22,6 +24,7 @@ public class RecordTable<K, V> implements Closeable {
   private final Serde<K> keySerde;
   private final Serde<V> valueSerde;
   private final RocksDB db;
+  private final String stateDir;
   private boolean storeOpen = true;
 
   public boolean isStoreOpen() {
@@ -103,5 +106,12 @@ public class RecordTable<K, V> implements Closeable {
   @Override
   public void close() {
     storeOpen = false;
+  }
+
+  public void close(boolean purge) {
+    close();
+    if (purge) {
+      FileSystemUtil.deleteDirectory(new File(stateDir));
+    }
   }
 }

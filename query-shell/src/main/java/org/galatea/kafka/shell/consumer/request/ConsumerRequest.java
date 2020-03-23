@@ -2,7 +2,6 @@ package org.galatea.kafka.shell.consumer.request;
 
 import java.util.concurrent.Semaphore;
 import lombok.Getter;
-import org.apache.avro.generic.GenericRecord;
 import org.apache.kafka.clients.consumer.Consumer;
 
 public abstract class ConsumerRequest<T> {
@@ -11,9 +10,9 @@ public abstract class ConsumerRequest<T> {
   private boolean isComplete = false;
   private Semaphore semaphore = new Semaphore(0);
   private T result;
-  abstract T fulfillRequest(Consumer<GenericRecord, GenericRecord> consumer);
+  abstract T fulfillRequest(Consumer<byte[], byte[]> consumer);
 
-  final public void internalFulfillRequest(Consumer<GenericRecord, GenericRecord> consumer) {
+  final public void internalFulfillRequest(Consumer<byte[], byte[]> consumer) {
     result = fulfillRequest(consumer);
     isComplete = true;
     semaphore.release();

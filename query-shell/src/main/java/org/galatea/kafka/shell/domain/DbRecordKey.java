@@ -11,6 +11,6 @@ public class DbRecordKey {
   private MutableField<byte[]> byteKey = new MutableField<>(null);
 
   public void setByteKey(String key) {
-    byteKey.setInner(Tuple.from(key).pack());
+    byteKey.setObject(Tuple.from(key).pack());
   }
 }

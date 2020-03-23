@@ -24,6 +24,7 @@ import org.galatea.kafka.shell.config.StandardWithVarargsResolver;
 import org.galatea.kafka.shell.consumer.ConsumerThreadController;
 import org.galatea.kafka.shell.domain.DbRecord;
 import org.galatea.kafka.shell.domain.DbRecordKey;
+import org.galatea.kafka.shell.domain.SerdeType;
 import org.galatea.kafka.shell.stores.ConsumerRecordTable;
 import org.galatea.kafka.shell.util.ListEntityFunction;
 import org.springframework.shell.standard.ShellComponent;
@@ -34,10 +35,14 @@ import org.springframework.shell.standard.ShellOption;
 @ShellComponent
 public class ShellController {
 
+  // TODO: command to stop listening to topic (which will also delete subscribed stores)
+  // TODO: Additional details in 'status' command such as table alias
+
   private final RecordStoreController recordStoreController;
   private final ConsumerThreadController consumerThreadController;
   private final StatusController statusController;
   private final AdminClient adminClient;
+  private final KafkaSerdeController kafkaSerdeController;
   private final static Map<String, ListEntityFunction> LIST_ENTITIES = new HashMap<>();
 
   static {
@@ -49,11 +54,13 @@ public class ShellController {
 
   public ShellController(RecordStoreController recordStoreController,
       ConsumerThreadController consumerThreadController, StatusController statusController,
-      MessagingConfig messagingConfig, AdminClient adminClient) {
+      MessagingConfig messagingConfig, AdminClient adminClient,
+      KafkaSerdeController kafkaSerdeController) {
     this.recordStoreController = recordStoreController;
     this.consumerThreadController = consumerThreadController;
     this.statusController = statusController;
     this.adminClient = adminClient;
+    this.kafkaSerdeController = kafkaSerdeController;
 
     System.out
         .println(String.format("Connected to brokers: %s", messagingConfig.getBootstrapServer()));
@@ -92,13 +99,20 @@ public class ShellController {
     store.doWith(predicate, results::add);
     Instant endTime = Instant.now();
 
-    results.forEach(entry -> ob.append(Instant.ofEpochMilli(entry.value.getRecordTimestamp().get()))
-        .append(": ").append(entry.value.getStringValue()).append("\n"));
+    results.forEach(entry -> ob
+        .append(readableTimestamp(entry.value.getRecordTimestamp().get())).append(":")
+        .append(" Key: ").append(entry.key.getByteKey())
+        .append(" Value: ").append(entry.value.getStringValue().get())
+        .append("\n"));
 
     ob.append("\n").append(results.size()).append(" Results found in ")
         .append(readableDuration(startTime, endTime)).append("\n");
 
     return ob.toString();
+  }
+
+  private String readableTimestamp(long timestamp) {
+    return String.format("%-24s", Instant.ofEpochMilli(timestamp));
   }
 
   private Predicate<KeyValue<DbRecordKey, DbRecord>> predicateFromRegexPatterns(
@@ -137,7 +151,9 @@ public class ShellController {
   public String listen(
       @ShellOption String topicName,
       @ShellOption String compact,
-      @ShellOption(defaultValue = "null") String alias)
+      @ShellOption(defaultValue = "null") String alias,
+      @ShellOption(defaultValue = "AVRO") String keyType,
+      @ShellOption(defaultValue = "AVRO") String valueType)
       throws ExecutionException, InterruptedException {
     if (alias.equals("null")) {
       alias = null;
@@ -160,6 +176,20 @@ public class ShellController {
         return "";
       }
 
+      if (!kafkaSerdeController.isValidType(keyType)) {
+        System.err.println(String.format("Key Type %s is not a configured type. Options: %s",
+            keyType, kafkaSerdeController.validTypes()));
+        return "";
+      }
+
+      if (!kafkaSerdeController.isValidType(valueType)) {
+        System.err.println(String.format("Value Type %s is not a configured type. Options: %s",
+            valueType, kafkaSerdeController.validTypes()));
+        return "";
+      }
+
+      kafkaSerdeController
+          .registerTopicTypes(topicName, SerdeType.valueOf(keyType), SerdeType.valueOf(valueType));
       ConsumerRecordTable store = recordStoreController.newTable(topicName, effectiveCompact);
       consumerThreadController.addStoreAssignment(topicName, store);
       consumerThreadController.addTopicToAssignment(topicName);

@@ -18,12 +18,12 @@ public class MutableField<T> {
   }
 
   @SuppressWarnings("unchecked")
-  public void setInner(Object inner) {
+  public void setObject(Object inner) {
     this.inner = (T) inner;
   }
 
   public String toString() {
-    return inner.toString();
+    return inner == null ? "null" : inner.toString();
   }
 
 }

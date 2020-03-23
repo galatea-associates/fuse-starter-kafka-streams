@@ -69,7 +69,7 @@ public class DbRecordSerde<T> implements Serde<T> {
         for (int i = 0; i < properties.size(); i++) {
           FieldExtractor<T> keyProperty = properties.get(i);
           Object o = deserialized.get(i);
-          keyProperty.apply(key).setInner(o);
+          keyProperty.apply(key).setObject(o);
         }
 
         return key;

@@ -2,7 +2,6 @@ package org.galatea.kafka.shell.consumer.request;
 
 import java.util.HashMap;
 import java.util.Map;
-import org.apache.avro.generic.GenericRecord;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.common.TopicPartition;
 import org.galatea.kafka.shell.domain.TopicPartitionOffsets;
@@ -12,7 +11,7 @@ public class ConsumerOffsetRequest extends
 
   @Override
   public Map<TopicPartition, TopicPartitionOffsets> fulfillRequest(
-      Consumer<GenericRecord, GenericRecord> consumer) {
+      Consumer<byte[], byte[]> consumer) {
     Map<TopicPartition, Long> endOffsets = consumer.endOffsets(consumer.assignment());
     Map<TopicPartition, Long> beginningOffsets = consumer.beginningOffsets(consumer.assignment());
     Map<TopicPartition, TopicPartitionOffsets> offsets = new HashMap<>();

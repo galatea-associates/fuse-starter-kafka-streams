@@ -1,5 +1,7 @@
 package org.galatea.kafka.shell.controller;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -111,13 +113,56 @@ public class StatusController {
             numberFormat.format(stat.getConsumedMessages()))));
     sb.append(printableTable(topicTable));
 
+    Map<String, Exception> topicExceptions = consumerThreadController.consumerProperties()
+        .getTopicExceptions();
+    if (!topicExceptions.isEmpty()) {
+      sb.append("Exceptions:\n");
+      List<List<String>> errorTable = new ArrayList<>();
+      errorTable.add(Arrays.asList("Topic", "Message"));
+
+      topicExceptions
+          .forEach((topic, e) -> errorTable.add(Arrays.asList(topic, stringStackTrace(e))));
+      sb.append(printableTable(errorTable));
+      topicExceptions.clear();
+    }
+
     return sb.toString();
+  }
+
+  private String stringStackTrace(Exception e) {
+    StringWriter sw = new StringWriter();
+    PrintWriter pw = new PrintWriter(sw);
+    e.printStackTrace(pw);
+    return sw.toString();
   }
 
   private String printableTable(List<List<String>> table) {
     if (table.size() == 0) {
       return "";
     }
+
+    // handle cells with multiple lines
+    for (int rowNum = 0; rowNum < table.size(); rowNum++) {
+      List<String> row = table.get(rowNum);
+      int maxLines = 1;
+      for (String cell : row) {
+        String[] lines = cell.split("\n");
+        maxLines = Math.max(lines.length, maxLines);
+      }
+      for (int i = 1; i < maxLines; i++) {
+        table.add(rowNum+1, rowWithBlanks(row.size()));
+      }
+      if (maxLines > 1) {
+        for (int cellNum = 0; cellNum < row.size(); cellNum++) {
+          String cell = row.get(cellNum);
+          String[] lines = cell.split("\n");
+          for (int i = 0; i < lines.length; i++) {
+            table.get(rowNum + i).set(cellNum, lines[i]);
+          }
+        }
+      }
+    }
+
     Integer[] maxLengthForColumn = new Integer[table.get(0).size()];
     Arrays.fill(maxLengthForColumn, 0);
 
@@ -131,8 +176,7 @@ public class StatusController {
     }
     StringBuilder sb = new StringBuilder();
     int columns =
-        Arrays.stream(maxLengthForColumn).mapToInt(value -> value).sum() + table.get(0).size() * 3
-            - 1;
+        Arrays.stream(maxLengthForColumn).mapToInt(value -> value).sum() + table.get(0).size() * 3 - 1;
     sb.append("+");
     for (int i = 0; i < columns; i++) {
       sb.append("-");
@@ -152,5 +196,13 @@ public class StatusController {
     }
     sb.append("+\n");
     return sb.toString();
+  }
+
+  private List<String> rowWithBlanks(int size) {
+    ArrayList<String> output = new ArrayList<>();
+    for (int i = 0; i < size; i++) {
+      output.add("");
+    }
+    return output;
   }
 }
