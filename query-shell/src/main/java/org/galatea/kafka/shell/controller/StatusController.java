@@ -14,7 +14,6 @@ import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.TopicPartition;
-import org.galatea.kafka.shell.consumer.ConsumerThreadController;
 import org.galatea.kafka.shell.domain.ConsumerProperties;
 import org.galatea.kafka.shell.domain.PartitionConsumptionStatus;
 import org.galatea.kafka.shell.domain.StoreStatus;

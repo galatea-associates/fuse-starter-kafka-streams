@@ -1,4 +1,4 @@
-package org.galatea.kafka.shell.consumer;
+package org.galatea.kafka.shell.controller;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -13,6 +13,7 @@ import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InvalidTopicException;
+import org.galatea.kafka.shell.consumer.ConsumerRunner;
 import org.galatea.kafka.shell.consumer.request.ConsumerOffsetRequest;
 import org.galatea.kafka.shell.domain.ConsumerProperties;
 import org.galatea.kafka.shell.domain.TopicPartitionOffsets;
@@ -92,6 +93,22 @@ public class ConsumerThreadController {
 
   public void addStoreAssignment(String topic, ConsumerRecordTable store) {
     subscribedStores(topic).add(store);
+  }
+
+  public Set<ConsumerRecordTable> removeTopicAssignment(String topicName) {
+    Set<TopicPartition> assignment = runner.getProperties().getAssignment();
+    List<TopicPartition> newAssignment = assignment.stream()
+        .filter(topicPart -> !topicPart.topic().equals(topicName)).collect(Collectors.toList());
+    assignment.clear();
+    assignment.addAll(newAssignment);
+    runner.getProperties().setAssignmentUpdated(true);
+
+    Set<ConsumerRecordTable> subscribed = runner.getProperties().getStoreSubscription()
+        .get(topicName);
+    Set<ConsumerRecordTable> outputSet = new HashSet<>(subscribed);
+    subscribed.clear();
+    runner.getProperties().getStoreSubscription().remove(topicName);
+    return outputSet;
   }
 
 

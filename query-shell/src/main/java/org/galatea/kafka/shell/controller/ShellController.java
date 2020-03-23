@@ -21,7 +21,6 @@ import org.apache.kafka.streams.KeyValue;
 import org.apache.logging.log4j.util.Strings;
 import org.galatea.kafka.shell.config.MessagingConfig;
 import org.galatea.kafka.shell.config.StandardWithVarargsResolver;
-import org.galatea.kafka.shell.consumer.ConsumerThreadController;
 import org.galatea.kafka.shell.domain.DbRecord;
 import org.galatea.kafka.shell.domain.DbRecordKey;
 import org.galatea.kafka.shell.domain.SerdeType;
@@ -35,8 +34,8 @@ import org.springframework.shell.standard.ShellOption;
 @ShellComponent
 public class ShellController {
 
-  // TODO: command to stop listening to topic (which will also delete subscribed stores)
   // TODO: Additional details in 'status' command such as table alias
+  // TODO: add ability to create tables that are filtered on receiving messages
 
   private final RecordStoreController recordStoreController;
   private final ConsumerThreadController consumerThreadController;
@@ -66,6 +65,18 @@ public class ShellController {
         .println(String.format("Connected to brokers: %s", messagingConfig.getBootstrapServer()));
     System.out.println(
         String.format("Connected to schema registry: %s", messagingConfig.getSchemaRegistryUrl()));
+  }
+
+  @ShellMethod(value = "Stop listening to a topic", key = "stop-listen")
+  public String stopListen(@ShellOption String topicName) {
+
+    Set<ConsumerRecordTable> subscribedTables = consumerThreadController
+        .removeTopicAssignment(topicName);
+    subscribedTables.forEach(table -> recordStoreController.deleteTable(table.getName()));
+
+    return String.format("Stopped consuming topic %s and deleted stores %s", topicName,
+        subscribedTables.stream().map(ConsumerRecordTable::getName)
+            .collect(Collectors.joining(", ")));
   }
 
   @ShellMethod("Get status of the service")
