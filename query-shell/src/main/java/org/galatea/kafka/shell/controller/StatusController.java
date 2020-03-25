@@ -5,19 +5,30 @@ import java.io.StringWriter;
 import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Map.Entry;
+import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.DescribeTopicsResult;
+import org.apache.kafka.clients.admin.TopicDescription;
+import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.TopicPartitionInfo;
 import org.galatea.kafka.shell.domain.ConsumerProperties;
 import org.galatea.kafka.shell.domain.PartitionConsumptionStatus;
+import org.galatea.kafka.shell.domain.ShellEntityType;
 import org.galatea.kafka.shell.domain.StoreStatus;
 import org.galatea.kafka.shell.domain.TopicPartitionOffsets;
+import org.galatea.kafka.shell.stores.ConsumerRecordTable;
 import org.galatea.kafka.starter.util.Pair;
 import org.springframework.stereotype.Component;
 
@@ -28,6 +39,7 @@ public class StatusController {
 
   private final RecordStoreController recordStoreController;
   private final ConsumerThreadController consumerThreadController;
+  private final AdminClient adminClient;
   private final NumberFormat numberFormat = NumberFormat.getNumberInstance(Locale.US);
 
   private Map<String, StoreStatus> storeStatus() {
@@ -58,6 +70,68 @@ public class StatusController {
 
   private Map<TopicPartition, TopicPartitionOffsets> topicStatus() throws InterruptedException {
     return consumerThreadController.consumerStatus();
+  }
+
+  public String printableDetails(ShellEntityType type, String name)
+      throws ExecutionException, InterruptedException {
+    switch (type) {
+      case TOPIC:
+        return describeTopic(name);
+      case STORE:
+        return describeStore(name);
+      default:
+        System.err.println(String.format("Unknown entity type %s", type));
+        return "";
+    }
+  }
+
+  private String describeStore(String name) {
+    ConsumerRecordTable table = recordStoreController.getTable(name);
+    // since name may be an alias
+    String tableName = table.getName();
+    List<String> topics = consumerThreadController.consumerProperties().getStoreSubscription()
+        .entrySet().stream()
+        .filter(e -> e.getValue().stream().anyMatch(t -> t.getName().equals(tableName)))
+        .map(Entry::getKey)
+        .collect(Collectors.toList());
+
+    List<List<String>> printTable = new ArrayList<>();
+    printTable.add(Arrays.asList("Property", "Value"));
+    printTable.add(Arrays.asList("Name", tableName));
+    printTable.add(Arrays.asList("Topics", topics.toString()));
+    printTable.add(Arrays.asList("Alias", recordStoreController.aliasFor(tableName).orElse("")));
+    printTable
+        .add(Arrays.asList("Received Records", numberFormat.format(table.getRecordsReceived())));
+    printTable.add(Arrays.asList("Unique Keys", numberFormat.format(table.getRecordsInStore())));
+    printTable.add(Arrays.asList("Filter", Arrays.toString(table.getRecordFilter().getRegex())));
+
+    return printableTable(printTable);
+  }
+
+  private String describeTopic(String name) throws ExecutionException, InterruptedException {
+    DescribeTopicsResult result = adminClient
+        .describeTopics(Collections.singleton(name));
+    TopicDescription description = result.all().get().get(name);
+    StringBuilder sb = new StringBuilder();
+    sb.append("Topic: ").append(description.name())
+        .append(";\tPartitions: ").append(description.partitions().size())
+        .append(";\tInternal: ").append(description.isInternal()).append("\n")
+        .append("Partitions:\n");
+
+    List<TopicPartitionInfo> partitions = description.partitions().stream()
+        .sorted(Comparator.comparing(TopicPartitionInfo::partition)).collect(Collectors.toList());
+    List<List<String>> partitionTable = new ArrayList<>();
+    partitionTable.add(Arrays.asList("Partition", "Leader", "ISR", "Replicas"));
+    for (TopicPartitionInfo partition : partitions) {
+      partitionTable.add(Arrays
+          .asList(String.valueOf(partition.partition()),
+              String.valueOf(partition.leader().id()),
+              partition.isr().stream().map(Node::id).collect(Collectors.toList()).toString(),
+              partition.replicas().stream().map(Node::id).collect(Collectors.toList()).toString()));
+    }
+    sb.append(printableTable(partitionTable));
+
+    return sb.toString();
   }
 
   @Data

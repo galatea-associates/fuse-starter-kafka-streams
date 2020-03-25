@@ -3,7 +3,6 @@ package org.galatea.kafka.shell.stores;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
-import java.util.function.Predicate;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -12,6 +11,7 @@ import org.galatea.kafka.shell.domain.DbRecord;
 import org.galatea.kafka.shell.domain.DbRecordKey;
 import org.galatea.kafka.shell.domain.StoreStatus;
 import org.galatea.kafka.shell.util.DbRecordStringUtil;
+import org.galatea.kafka.shell.util.RegexPredicate;
 import org.rocksdb.RocksDB;
 
 @Slf4j
@@ -19,14 +19,14 @@ import org.rocksdb.RocksDB;
 public class ConsumerRecordTable extends RecordTable<DbRecordKey, DbRecord> {
 
   private final Map<Integer, Long> partitionLatestOffsetReceived = new HashMap<>();
-  private final Predicate<String> recordFilter;
+  private final RegexPredicate recordFilter;
   @Getter
   private long recordsReceived = 0;
   @Getter
   private long recordsInStore = 0;
 
   public ConsumerRecordTable(String name, Serde<DbRecordKey> keySerde, Serde<DbRecord> valueSerde,
-      RocksDB db, String stateDir, Predicate<String> recordFilter) {
+      RocksDB db, String stateDir, RegexPredicate recordFilter) {
     super(name, keySerde, valueSerde, db, stateDir);
     this.recordFilter = recordFilter;
   }

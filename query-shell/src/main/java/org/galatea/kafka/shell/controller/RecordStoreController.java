@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
-import java.util.function.Predicate;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
@@ -13,6 +12,7 @@ import org.apache.kafka.common.serialization.Serde;
 import org.galatea.kafka.shell.domain.DbRecord;
 import org.galatea.kafka.shell.domain.DbRecordKey;
 import org.galatea.kafka.shell.stores.ConsumerRecordTable;
+import org.galatea.kafka.shell.util.RegexPredicate;
 import org.galatea.kafka.starter.util.Pair;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
@@ -79,11 +79,11 @@ public class RecordStoreController {
   }
 
   public ConsumerRecordTable newTable(String tableName, boolean compact) {
-    return newTableWithFilter(tableName, compact, record -> true);
+    return newTableWithFilter(tableName, compact, new RegexPredicate(new String[0]));
   }
 
   public ConsumerRecordTable newTableWithFilter(String tableName, boolean compact,
-      Predicate<String> recordFilter) {
+      RegexPredicate recordFilter) {
     Serde<DbRecordKey> keySerde = this.allRecordKeySerde;
     if (compact) {
       keySerde = this.compactKeySerde;

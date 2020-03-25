@@ -22,9 +22,11 @@ import org.galatea.kafka.shell.config.StandardWithVarargsResolver;
 import org.galatea.kafka.shell.domain.DbRecord;
 import org.galatea.kafka.shell.domain.DbRecordKey;
 import org.galatea.kafka.shell.domain.SerdeType;
+import org.galatea.kafka.shell.domain.ShellEntityType;
 import org.galatea.kafka.shell.stores.ConsumerRecordTable;
 import org.galatea.kafka.shell.util.DbRecordStringUtil;
 import org.galatea.kafka.shell.util.ListEntityFunction;
+import org.galatea.kafka.shell.util.RegexPredicate;
 import org.galatea.kafka.starter.util.Pair;
 import org.springframework.shell.standard.ShellComponent;
 import org.springframework.shell.standard.ShellMethod;
@@ -34,7 +36,7 @@ import org.springframework.shell.standard.ShellOption;
 @ShellComponent
 public class ShellController {
 
-  // TODO: 'describe' command for giving more details about tables
+  // TODO: describe consumer group
   // TODO: 'query detailed' command prints (and looks for pattern) with offsets and partitions
   // TODO: limit number of records returned by query
   // TODO: figure out how to deal with cluster not available - currently hangs on start?
@@ -81,6 +83,14 @@ public class ShellController {
     return String.format("Stopped consuming topic %s and deleted stores %s", topicName,
         subscribedTables.stream().map(ConsumerRecordTable::getName)
             .collect(Collectors.joining(", ")));
+  }
+
+  @ShellMethod("Get details about an entity")
+  public String describe(
+      @ShellOption(value = "--entity-type") ShellEntityType entityType,
+      @ShellOption(value = "--entity-name") String name)
+      throws ExecutionException, InterruptedException {
+    return statusController.printableDetails(entityType, name);
   }
 
   @ShellMethod("Get status of the service")
@@ -159,25 +169,10 @@ public class ShellController {
       throws Exception {
     if (LIST_ENTITIES.containsKey(entity.toUpperCase())) {
       List<String> list = LIST_ENTITIES.get(entity.toUpperCase()).apply(adminClient);
-      return list.stream().filter(predicateFromRegex(regex)).collect(Collectors.joining("\n"));
+      return list.stream().filter(new RegexPredicate(regex)).collect(Collectors.joining("\n"));
     }
     System.err.println(String.format("Unknown entity to list: %s", entity));
     return "";
-  }
-
-  private Predicate<String> predicateFromRegex(String[] regex) {
-    return entry -> {
-      List<Pattern> patterns = Arrays
-          .stream(regex)
-          .map(Pattern::compile)
-          .collect(Collectors.toList());
-      for (Pattern pattern : patterns) {
-        if (!pattern.matcher(entry).find()) {
-          return false;
-        }
-      }
-      return true;
-    };
   }
 
   @ShellMethod("Listen to a topic")
@@ -207,7 +202,7 @@ public class ShellController {
       ConsumerRecordTable store;
       if (regexFilter.length > 0) {
         store = recordStoreController
-            .newTableWithFilter(tableName, compact, predicateFromRegex(regexFilter));
+            .newTableWithFilter(tableName, compact, new RegexPredicate(regexFilter));
       } else {
         store = recordStoreController.newTable(tableName, compact);
       }
