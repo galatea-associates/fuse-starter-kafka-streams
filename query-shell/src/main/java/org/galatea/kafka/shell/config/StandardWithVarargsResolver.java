@@ -81,6 +81,9 @@ public class StandardWithVarargsResolver extends StandardParameterResolver {
           Parameter parameter = lookupParameterForKey(methodParameter.getMethod(), key);
           int arity = getArity(parameter);
 
+          if (arity == StandardWithVarargsResolver.VARARGS_ARITY) {
+            arity = words.size() - from - 1;
+          }
           if (i + 1 + arity > words.size()) {
             String input = String.join(" ", words.subList(i, words.size()));
             throw new UnfinishedParameterResolutionException(

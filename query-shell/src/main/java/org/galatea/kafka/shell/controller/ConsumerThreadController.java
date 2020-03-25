@@ -12,7 +12,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.errors.InvalidTopicException;
 import org.galatea.kafka.shell.consumer.ConsumerRunner;
 import org.galatea.kafka.shell.consumer.request.ConsumerOffsetRequest;
 import org.galatea.kafka.shell.domain.ConsumerProperties;
@@ -68,7 +67,7 @@ public class ConsumerThreadController {
       runner.getProperties().getSeekBeginningAssignment().addAll(addToAssignment);
       runner.getProperties().setAssignment(currentAssignment);
       runner.getProperties().setAssignmentUpdated(true);
-    } catch (InvalidTopicException e) {
+    } catch (Exception e) {
       log.warn("Could not get Topic details:", e);
       return false;
     }
@@ -76,7 +75,7 @@ public class ConsumerThreadController {
   }
 
   private List<TopicPartition> getTopicPartition(String topic)
-      throws InterruptedException, ExecutionException {
+      throws Exception {
 
     TopicDescription retrievedDescription = adminClient.describeTopics(Collections.singleton(topic))
         .all().get().get(topic);

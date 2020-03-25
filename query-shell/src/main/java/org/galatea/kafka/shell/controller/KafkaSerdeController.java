@@ -75,7 +75,7 @@ public class KafkaSerdeController {
     Exception firstException = null;
     try {
       key = fromBytes(keyType, record.key(), metadata, true, DbRecordKey::new,
-          (inKey, res) -> inKey.getByteKey().setObject(res.toString()));
+          (inKey, res) -> inKey.getStringKey().setObject(res.toString()));
 
       key.getPartition().set((long) metadata.getPartition());
       key.getOffset().set(metadata.getOffset());

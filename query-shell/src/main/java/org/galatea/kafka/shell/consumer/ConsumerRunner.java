@@ -54,7 +54,8 @@ public class ConsumerRunner implements Runnable, ApplicationContextAware {
           removeErrorTopicsFromAssignment(properties, errorTopics);
           errorTopics.forEach(errorTopic -> properties.getStoreSubscription().get(errorTopic)
               .forEach(table -> recordStoreController.deleteTable(table.getName())));
-          errorTopics.forEach(errorTopic -> properties.getStoreSubscription().get(errorTopic).clear());
+          errorTopics
+              .forEach(errorTopic -> properties.getStoreSubscription().get(errorTopic).clear());
           errorTopics.clear();
         }
 
@@ -71,7 +72,7 @@ public class ConsumerRunner implements Runnable, ApplicationContextAware {
         }
 
         if (consumer.assignment().isEmpty()) {
-          trySleep(1000);
+          trySleep(POLL_MAX_DURATION.toMillis());
           continue;
         }
 
@@ -104,9 +105,10 @@ public class ConsumerRunner implements Runnable, ApplicationContextAware {
       Set<String> errorTopics) {
 
     // TODO: trying to subscribe to same topic again with different configuration (after error) doesn't do anything
-    List<TopicPartition> assignmentWithoutErrorTopics = properties.getAssignment().stream()
-        .filter(topicPartition -> !errorTopics.contains(topicPartition.topic())).collect(
-            Collectors.toList());
+    List<TopicPartition> assignmentWithoutErrorTopics = properties.getAssignment()
+        .stream()
+        .filter(topicPartition -> !errorTopics.contains(topicPartition.topic()))
+        .collect(Collectors.toList());
     properties.getAssignment().clear();
     properties.getAssignment().addAll(assignmentWithoutErrorTopics);
     properties.setAssignmentUpdated(true);

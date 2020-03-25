@@ -14,9 +14,9 @@ import org.springframework.context.annotation.Configuration;
 public class SerdeConfig {
 
   private static final List<FieldExtractor<DbRecordKey>> COMPACT_KEY_PROPERTIES = Arrays
-      .asList(DbRecordKey::getByteKey);
+      .asList(DbRecordKey::getStringKey);
   private static final List<FieldExtractor<DbRecordKey>> ALL_KEY_PROPERTIES = Arrays
-      .asList(DbRecordKey::getPartition, DbRecordKey::getOffset, DbRecordKey::getByteKey);
+      .asList(DbRecordKey::getPartition, DbRecordKey::getOffset, DbRecordKey::getStringKey);
   private static final List<FieldExtractor<DbRecord>> VALUE_PROPERTIES = Arrays
       .asList(DbRecord::getPartition, DbRecord::getOffset, DbRecord::getRecordTimestamp,
           DbRecord::getStringValue);

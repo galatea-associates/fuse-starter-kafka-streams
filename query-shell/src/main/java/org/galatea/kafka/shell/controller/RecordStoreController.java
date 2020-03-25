@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Predicate;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
@@ -29,6 +30,7 @@ public class RecordStoreController {
   private final Serde<DbRecordKey> compactKeySerde;
   private final Serde<DbRecordKey> allRecordKeySerde;
   private final Serde<DbRecord> valueSerde;
+  private int lastFilteredStoreNum = 0;
 
   public ConsumerRecordTable getTable(String tableName) {
     if (tables.containsKey(tableName)) {
@@ -48,17 +50,20 @@ public class RecordStoreController {
     return Optional.empty();
   }
 
-  public boolean tableExist(String topicname, boolean compact) {
-    return tableExist(tableName(topicname, compact));
+  public boolean tableExist(String topicname, boolean compact, boolean filtered) {
+    return tableExist(tableName(topicname, compact, filtered));
   }
 
   public boolean tableExist(String tableName) {
     return tables.containsKey(tableName) || tables.containsKey(aliases.get(tableName));
   }
 
-  private String tableName(String topic, boolean compact) {
+  public String tableName(String topic, boolean compact, boolean filtered) {
     if (compact) {
       topic += "-compact";
+    }
+    if (filtered) {
+      topic += "-filtered-" + (++lastFilteredStoreNum);
     }
     return topic;
   }
@@ -73,8 +78,12 @@ public class RecordStoreController {
     }
   }
 
-  public ConsumerRecordTable newTable(String topicName, boolean compact) {
-    String tableName = tableName(topicName, compact);
+  public ConsumerRecordTable newTable(String tableName, boolean compact) {
+    return newTableWithFilter(tableName, compact, record -> true);
+  }
+
+  public ConsumerRecordTable newTableWithFilter(String tableName, boolean compact,
+      Predicate<String> recordFilter) {
     Serde<DbRecordKey> keySerde = this.allRecordKeySerde;
     if (compact) {
       keySerde = this.compactKeySerde;
@@ -86,7 +95,7 @@ public class RecordStoreController {
       }
       Pair<String, RocksDB> rocksDB = rocksDbController.newStore(tableName);
       ConsumerRecordTable table = new ConsumerRecordTable(tableName, keySerde, this.valueSerde,
-          rocksDB.getValue(), rocksDB.getKey());
+          rocksDB.getValue(), rocksDB.getKey(), recordFilter);
       tables.put(tableName, new TableDetails(table));
       return table;
 
