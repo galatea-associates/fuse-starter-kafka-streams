@@ -4,7 +4,7 @@ import java.lang.reflect.UndeclaredThrowableException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,7 +35,8 @@ import org.springframework.shell.standard.ShellOption;
 public class ShellController {
 
   // TODO: 'describe' command for giving more details about tables
-  // TODO: 'query detailed' command prints offsets and partitions
+  // TODO: 'query detailed' command prints (and looks for pattern) with offsets and partitions
+  // TODO: limit number of records returned by query
   // TODO: figure out how to deal with cluster not available - currently hangs on start?
 
   private final RecordStoreController recordStoreController;
@@ -108,9 +109,10 @@ public class ShellController {
     ob.append("Results for regex set '").append(Arrays.toString(regex)).append("':\n");
     Instant startTime = Instant.now();
 
-    Collection<Pair<DbRecordKey, DbRecord>> results = new ArrayList<>();
+    List<Pair<DbRecordKey, DbRecord>> results = new ArrayList<>();
     Predicate<Pair<DbRecordKey, DbRecord>> predicate = predicateFromRegexPatterns(patterns);
     store.doWith(predicate, results::add);
+    results.sort(Comparator.comparing(o -> o.getValue().getRecordTimestamp().get()));
     Instant endTime = Instant.now();
 
     results.forEach(entry -> ob
