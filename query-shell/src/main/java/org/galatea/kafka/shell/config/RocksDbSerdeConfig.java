@@ -1,6 +1,7 @@
 package org.galatea.kafka.shell.config;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import org.apache.kafka.common.serialization.Serde;
 import org.galatea.kafka.shell.domain.DbRecord;
@@ -11,10 +12,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-public class SerdeConfig {
+public class RocksDbSerdeConfig {
 
-  private static final List<FieldExtractor<DbRecordKey>> COMPACT_KEY_PROPERTIES = Arrays
-      .asList(DbRecordKey::getStringKey);
+  private static final List<FieldExtractor<DbRecordKey>> COMPACT_KEY_PROPERTIES = Collections
+      .singletonList(DbRecordKey::getStringKey);
   private static final List<FieldExtractor<DbRecordKey>> ALL_KEY_PROPERTIES = Arrays
       .asList(DbRecordKey::getPartition, DbRecordKey::getOffset, DbRecordKey::getStringKey);
   private static final List<FieldExtractor<DbRecord>> VALUE_PROPERTIES = Arrays

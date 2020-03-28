@@ -164,7 +164,7 @@ public class StandardWithVarargsResolver extends StandardParameterResolver {
 
     Parameter param = methodParameter.getMethod().getParameters()[methodParameter
         .getParameterIndex()];
-    if (!resolved.containsKey(param)) {
+    if (!resolved.containsKey(param) && getArity(param) != VARARGS_ARITY) {
       throw new ParameterMissingResolutionException(describe(methodParameter).findFirst().get());
     }
     StandardWithVarargsResolver.ParameterRawValue parameterRawValue = resolved.get(param);

@@ -1,13 +1,14 @@
 package org.galatea.kafka.shell.controller;
 
+import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
+import java.io.IOException;
 import java.lang.reflect.UndeclaredThrowableException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Predicate;
@@ -21,11 +22,10 @@ import org.galatea.kafka.shell.config.MessagingConfig;
 import org.galatea.kafka.shell.config.StandardWithVarargsResolver;
 import org.galatea.kafka.shell.domain.DbRecord;
 import org.galatea.kafka.shell.domain.DbRecordKey;
-import org.galatea.kafka.shell.domain.SerdeType;
+import org.galatea.kafka.shell.domain.SerdeType.DataType;
 import org.galatea.kafka.shell.domain.ShellEntityType;
 import org.galatea.kafka.shell.stores.ConsumerRecordTable;
 import org.galatea.kafka.shell.util.DbRecordStringUtil;
-import org.galatea.kafka.shell.util.ListEntityFunction;
 import org.galatea.kafka.shell.util.RegexPredicate;
 import org.galatea.kafka.starter.util.Pair;
 import org.springframework.shell.standard.ShellComponent;
@@ -36,44 +36,43 @@ import org.springframework.shell.standard.ShellOption;
 @ShellComponent
 public class ShellController {
 
-  // TODO: describe consumer group
-  // TODO: 'query detailed' command prints (and looks for pattern) with offsets and partitions
-  // TODO: limit number of records returned by query
-  // TODO: figure out how to deal with cluster not available - currently hangs on start?
+  private static final String REGEX_HELP = "search filter regex. Optional. more than 1 argument "
+      + "will be used as additional filters resulting in regex1 AND regex2 AND ... ";
 
   private final RecordStoreController recordStoreController;
   private final ConsumerThreadController consumerThreadController;
   private final StatusController statusController;
   private final AdminClient adminClient;
+  private final SchemaRegistryController schemaRegistryController;
   private final KafkaSerdeController kafkaSerdeController;
-  private final static Map<String, ListEntityFunction> LIST_ENTITIES = new HashMap<>();
-
-  static {
-    LIST_ENTITIES.put("TOPIC",
-        client -> client.listTopics().names().get().stream().sorted().collect(Collectors.toList()));
-    LIST_ENTITIES.put("CONSUMER-GROUP", client -> client.listConsumerGroups().all().get().stream()
-        .map(ConsumerGroupListing::groupId).collect(Collectors.toList()));
-  }
 
   public ShellController(RecordStoreController recordStoreController,
       ConsumerThreadController consumerThreadController, StatusController statusController,
       MessagingConfig messagingConfig, AdminClient adminClient,
+      SchemaRegistryController schemaRegistryController,
       KafkaSerdeController kafkaSerdeController) throws Exception {
     this.recordStoreController = recordStoreController;
     this.consumerThreadController = consumerThreadController;
     this.statusController = statusController;
     this.adminClient = adminClient;
+    this.schemaRegistryController = schemaRegistryController;
     this.kafkaSerdeController = kafkaSerdeController;
 
-    String clusterId = adminClient.describeCluster().clusterId().get();
-    System.out
-        .println(String.format("Connected to brokers: %s", messagingConfig.getBootstrapServer()));
-    System.out.println(
-        String.format("Connected to schema registry: %s", messagingConfig.getSchemaRegistryUrl()));
-    System.out.println(String.format("Cluster ID: %s", clusterId));
+    try {
+      String clusterId = adminClient.describeCluster().clusterId().get();
+      System.out
+          .println(String.format("Connected to brokers: %s", messagingConfig.getBootstrapServer()));
+      System.out.println(String
+          .format("Connected to schema registry: %s", messagingConfig.getSchemaRegistryUrl()));
+      System.out.println(String.format("Cluster ID: %s", clusterId));
+    } catch (ExecutionException e) {
+      log.error("Could not connect to brokers {}", messagingConfig.getBootstrapServer());
+      System.exit(1);
+    }
+
   }
 
-  @ShellMethod(value = "Stop listening to a topic", key = "stop-listen")
+  @ShellMethod(value = "Stop listening to a topic and remove subscribed stores", key = "stop-listen")
   public String stopListen(@ShellOption String topicName) {
 
     Set<ConsumerRecordTable> subscribedTables = consumerThreadController
@@ -86,11 +85,11 @@ public class ShellController {
   }
 
   @ShellMethod("Get details about an entity")
-  public String describe(
-      @ShellOption(value = "--entity-type") ShellEntityType entityType,
-      @ShellOption(value = "--entity-name") String name)
-      throws ExecutionException, InterruptedException {
-    return statusController.printableDetails(entityType, name);
+  public String describe(@ShellOption ShellEntityType entityType, @ShellOption String name,
+      /* DO NOT put arguments after an option that uses VARARGS since VARARGS will use all remaining arguments*/
+      @ShellOption(arity = StandardWithVarargsResolver.VARARGS_ARITY) String[] parameters)
+      throws ExecutionException, InterruptedException, IOException, RestClientException {
+    return statusController.printableDetails(entityType, name, parameters);
   }
 
   @ShellMethod("Get status of the service")
@@ -99,9 +98,9 @@ public class ShellController {
   }
 
   @ShellMethod("Search a store using REGEX")
-  public String query(
-      @ShellOption String storeName,
-      @ShellOption(arity = StandardWithVarargsResolver.VARARGS_ARITY) String[] regex) {
+  public String query(@ShellOption String storeName, @ShellOption boolean detail,
+      /* DO NOT put arguments after an option that uses VARARGS since VARARGS will use all remaining arguments*/
+      @ShellOption(help = REGEX_HELP, arity = StandardWithVarargsResolver.VARARGS_ARITY) String[] regexFilter) {
 
     StringBuilder ob = new StringBuilder();
 
@@ -112,11 +111,16 @@ public class ShellController {
     ConsumerRecordTable store = recordStoreController.getTable(storeName);
 
     List<Pattern> patterns = new ArrayList<>();
-    for (String pattern : regex) {
+    for (String pattern : regexFilter) {
       patterns.add(Pattern.compile(pattern));
     }
 
-    ob.append("Results for regex set '").append(Arrays.toString(regex)).append("':\n");
+    ob.append("Results for regex set '").append(Arrays.toString(regexFilter)).append("':\n");
+    ob.append("  (Record Timestamp");
+    if (detail) {
+      ob.append(" [partition-offset]");
+    }
+    ob.append(": Key, Value)\n");
     Instant startTime = Instant.now();
 
     List<Pair<DbRecordKey, DbRecord>> results = new ArrayList<>();
@@ -125,10 +129,14 @@ public class ShellController {
     results.sort(Comparator.comparing(o -> o.getValue().getRecordTimestamp().get()));
     Instant endTime = Instant.now();
 
-    results.forEach(entry -> ob
-        .append(readableTimestamp(entry.getValue().getRecordTimestamp().get())).append(": ")
-        .append(DbRecordStringUtil.recordToString(entry))
-        .append("\n"));
+    for (Pair<DbRecordKey, DbRecord> entry : results) {
+      ob.append(readableTimestamp(entry.getValue().getRecordTimestamp().get()));
+      if (detail) {
+        ob.append(" [").append(entry.getValue().getPartition()).append("-")
+            .append(entry.getValue().getOffset()).append("]");
+      }
+      ob.append(": ").append(DbRecordStringUtil.recordToString(entry)).append("\n");
+    }
 
     ob.append("\n").append(results.size()).append(" Results found in ")
         .append(readableDuration(startTime, endTime)).append("\n");
@@ -163,35 +171,55 @@ public class ShellController {
     }
   }
 
-  @ShellMethod("List entities")
-  public String list(@ShellOption String entity,
-      @ShellOption(arity = StandardWithVarargsResolver.VARARGS_ARITY) String[] regex)
+  @ShellMethod("List entities. Sorted alphabetically")
+  public String list(@ShellOption(help = "TOPIC, CONSUMER-GROUP, SCHEMA") String entity,
+      /* DO NOT put arguments after an option that uses VARARGS since VARARGS will use all remaining arguments*/
+      @ShellOption(help = REGEX_HELP, arity = StandardWithVarargsResolver.VARARGS_ARITY) String[] regexFilter)
       throws Exception {
-    if (LIST_ENTITIES.containsKey(entity.toUpperCase())) {
-      List<String> list = LIST_ENTITIES.get(entity.toUpperCase()).apply(adminClient);
-      return list.stream().filter(new RegexPredicate(regex)).collect(Collectors.joining("\n"));
+
+    entity = entity.toUpperCase();
+    List<String> entries = Collections.emptyList();
+    switch (entity) {
+      case "TOPIC":
+        entries = new ArrayList<>(adminClient.listTopics().names().get());
+        break;
+      case "CONSUMER-GROUP":
+        entries = adminClient.listConsumerGroups().all().get().stream()
+            .map(ConsumerGroupListing::groupId).collect(Collectors.toList());
+        break;
+      case "SCHEMA":
+        entries = schemaRegistryController.listSubjects();
+        break;
+      default:
+        System.err.println(String.format("Unknown entity to list: %s", entity));
+        break;
     }
-    System.err.println(String.format("Unknown entity to list: %s", entity));
-    return "";
+
+    return entries.stream().sorted().filter(new RegexPredicate(regexFilter))
+        .collect(Collectors.joining("\n"));
   }
 
-  @ShellMethod("Listen to a topic")
+  @ShellMethod("Listen to a topic and create store that will consume it")
   public String listen(
       @ShellOption("--topic") String topicName,
-      @ShellOption(value = "--compact", arity = 0) boolean compact,
-      @ShellOption(defaultValue = "null", value = "--alias") String alias,
-      @ShellOption(defaultValue = "AVRO", value = "--key-type") SerdeType keyType,
-      @ShellOption(defaultValue = "AVRO", value = "--value-type") SerdeType valueType,
-      @ShellOption(arity = StandardWithVarargsResolver.VARARGS_ARITY, value = "--regex-filter") String[] regexFilter)
+      @ShellOption boolean compact,
+      @ShellOption(defaultValue = "null") String alias,
+      @ShellOption(help = "Potential Values: TUPLE, AVRO, LONG, INTEGER, SHORT, FLOAT, DOUBLE, "
+          + "STRING, BYTEBUFFER, BYTES, BYTE_ARRAY", defaultValue = "AVRO") DataType keyType,
+      @ShellOption(help = "Potential Values: TUPLE, AVRO, LONG, INTEGER, SHORT, FLOAT, DOUBLE, "
+          + "STRING, BYTEBUFFER, BYTES, BYTE_ARRAY", defaultValue = "AVRO") DataType valueType,
+      /* DO NOT put arguments after an option that uses VARARGS since VARARGS will use all remaining arguments*/
+      @ShellOption(help = REGEX_HELP, arity = StandardWithVarargsResolver.VARARGS_ARITY) String[] regexFilter)
       throws ExecutionException, InterruptedException {
     if (alias.equals("null")) {
       alias = null;
     }
     StringBuilder ob = new StringBuilder();
+
     try {
       if (!topicExist(topicName)) {
-        System.err.println(String
-            .format("Topic %s does not exist. Use 'list topic' to get all topics available",
+        System.err.println(
+            String.format("Topic %s does not exist. Use 'list topic' to get all topics available",
                 topicName));
         return "";
       }

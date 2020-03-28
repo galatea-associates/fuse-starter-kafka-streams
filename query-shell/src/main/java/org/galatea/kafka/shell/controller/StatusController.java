@@ -1,5 +1,8 @@
 package org.galatea.kafka.shell.controller;
 
+import io.confluent.kafka.schemaregistry.client.SchemaMetadata;
+import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
+import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.text.NumberFormat;
@@ -12,11 +15,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.avro.Schema;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.DescribeTopicsResult;
 import org.apache.kafka.clients.admin.TopicDescription;
@@ -40,6 +45,7 @@ public class StatusController {
   private final RecordStoreController recordStoreController;
   private final ConsumerThreadController consumerThreadController;
   private final AdminClient adminClient;
+  private final SchemaRegistryController schemaRegistryController;
   private final NumberFormat numberFormat = NumberFormat.getNumberInstance(Locale.US);
 
   private Map<String, StoreStatus> storeStatus() {
@@ -72,17 +78,45 @@ public class StatusController {
     return consumerThreadController.consumerStatus();
   }
 
-  public String printableDetails(ShellEntityType type, String name)
-      throws ExecutionException, InterruptedException {
+  public String printableDetails(ShellEntityType type, String name, String[] parameters)
+      throws ExecutionException, InterruptedException, IOException, RestClientException {
     switch (type) {
       case TOPIC:
         return describeTopic(name);
       case STORE:
         return describeStore(name);
+      case SCHEMA:
+        return describeSchema(name, parameters);
       default:
         System.err.println(String.format("Unknown entity type %s", type));
         return "";
     }
+  }
+
+  private String describeSchema(String name, String[] parameters)
+      throws IOException, RestClientException {
+
+    Optional<Integer> version;
+    if (parameters.length == 0) {
+      System.out.println("Retrieving latest version of schema since version was not specified");
+      version = schemaRegistryController.getLatesSchemaMetadata(name).map(SchemaMetadata::getVersion);
+    } else {
+      if (parameters.length > 1) {
+        System.out
+            .println(String.format("Using first parameter '%s' as version number", parameters[0]));
+      }
+      version = Optional.of(Integer.parseInt(parameters[0]));
+    }
+
+    Optional<Schema> schema = Optional.empty();
+    if (version.isPresent()) {
+      schema = schemaRegistryController.describeSchema(name, version.get());
+    }
+    if (schema.isPresent()) {
+      return schema.get().toString(true);
+    }
+    System.err.println("Could not find schema");
+    return "";
   }
 
   private String describeStore(String name) {

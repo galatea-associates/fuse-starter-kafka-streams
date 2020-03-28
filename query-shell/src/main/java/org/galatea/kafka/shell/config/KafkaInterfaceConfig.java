@@ -1,5 +1,7 @@
 package org.galatea.kafka.shell.config;
 
+import io.confluent.kafka.schemaregistry.client.CachedSchemaRegistryClient;
+import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 import java.util.Properties;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
@@ -30,7 +32,13 @@ public class KafkaInterfaceConfig {
   public AdminClient adminClient(MessagingConfig config) {
     Properties props = new Properties();
     props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, config.getBootstrapServer());
+    props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, 15000);
     return KafkaAdminClient.create(props);
   }
 
+  @Bean
+  public SchemaRegistryClient schemaRegistryClient(MessagingConfig messagingConfig) {
+    return new CachedSchemaRegistryClient(messagingConfig.getSchemaRegistryUrl(), 1000);
+
+  }
 }
