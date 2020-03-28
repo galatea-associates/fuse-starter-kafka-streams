@@ -1,12 +1,12 @@
 package org.galatea.kafka.shell.controller;
 
+import com.github.fonimus.ssh.shell.commands.SshShellComponent;
 import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import java.io.IOException;
 import java.lang.reflect.UndeclaredThrowableException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
@@ -28,16 +28,15 @@ import org.galatea.kafka.shell.stores.ConsumerRecordTable;
 import org.galatea.kafka.shell.util.DbRecordStringUtil;
 import org.galatea.kafka.shell.util.RegexPredicate;
 import org.galatea.kafka.starter.util.Pair;
-import org.springframework.shell.standard.ShellComponent;
 import org.springframework.shell.standard.ShellMethod;
 import org.springframework.shell.standard.ShellOption;
 
 @Slf4j
-@ShellComponent
+@SshShellComponent
 public class ShellController {
 
   // TODO: add dependency for allowing ssh login
-
+  // TODO: active-listen command for seeing new messages arrive
   private static final String REGEX_HELP = "search filter regex. Optional. more than 1 argument "
       + "will be used as additional filters resulting in regex1 AND regex2 AND ... ";
 
@@ -173,14 +172,14 @@ public class ShellController {
     }
   }
 
-  @ShellMethod("List entities. Sorted alphabetically")
+  @ShellMethod("List entities. Sorted alphabetically. Potential entities: Topic, Consumer-group, Schema")
   public String list(@ShellOption(help = "TOPIC, CONSUMER-GROUP, SCHEMA") String entity,
       /* DO NOT put arguments after an option that uses VARARGS since VARARGS will use all remaining arguments*/
       @ShellOption(help = REGEX_HELP, arity = StandardWithVarargsResolver.VARARGS_ARITY) String[] regexFilter)
       throws Exception {
 
     entity = entity.toUpperCase();
-    List<String> entries = Collections.emptyList();
+    List<String> entries;
     switch (entity) {
       case "TOPIC":
         entries = new ArrayList<>(adminClient.listTopics().names().get());
@@ -193,8 +192,7 @@ public class ShellController {
         entries = schemaRegistryController.listSubjects();
         break;
       default:
-        System.err.println(String.format("Unknown entity to list: %s", entity));
-        break;
+        return "Unconfigured entity " + entity;
     }
 
     return entries.stream().sorted().filter(new RegexPredicate(regexFilter))
@@ -220,10 +218,8 @@ public class ShellController {
 
     try {
       if (!topicExist(topicName)) {
-        System.err.println(
-            String.format("Topic %s does not exist. Use 'list topic' to get all topics available",
-                topicName));
-        return "";
+        return String.format("Topic %s does not exist. Use 'list topic' to get all topics "
+            + "available", topicName);
       }
 
       kafkaSerdeController.registerTopicTypes(topicName, keyType, valueType);
@@ -257,8 +253,7 @@ public class ShellController {
 
       return ob.toString();
     } catch (UndeclaredThrowableException e) {
-      System.err.println("Could not listen to topic: " + e.getCause().getMessage());
-      return "";
+      return "Could not listen to topic: " + e.getCause().getMessage();
     }
   }
 

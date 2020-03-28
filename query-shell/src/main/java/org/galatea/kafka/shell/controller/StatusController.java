@@ -88,22 +88,21 @@ public class StatusController {
       case SCHEMA:
         return describeSchema(name, parameters);
       default:
-        System.err.println(String.format("Unknown entity type %s", type));
-        return "";
+        return String.format("Unknown entity type %s", type);
     }
   }
 
   private String describeSchema(String name, String[] parameters)
       throws IOException, RestClientException {
 
+    StringBuilder sb = new StringBuilder();
     Optional<Integer> version;
     if (parameters.length == 0) {
-      System.out.println("Retrieving latest version of schema since version was not specified");
+      sb.append("Retrieving latest version of schema since version was not specified\n");
       version = schemaRegistryController.getLatesSchemaMetadata(name).map(SchemaMetadata::getVersion);
     } else {
       if (parameters.length > 1) {
-        System.out
-            .println(String.format("Using first parameter '%s' as version number", parameters[0]));
+        sb.append(String.format("Using first parameter '%s' as version number", parameters[0]));
       }
       version = Optional.of(Integer.parseInt(parameters[0]));
     }
@@ -113,10 +112,11 @@ public class StatusController {
       schema = schemaRegistryController.describeSchema(name, version.get());
     }
     if (schema.isPresent()) {
-      return schema.get().toString(true);
+      sb.append(schema.get().toString(true));
+    } else {
+      sb.append("Could not find schema");
     }
-    System.err.println("Could not find schema");
-    return "";
+    return sb.toString();
   }
 
   private String describeStore(String name) {

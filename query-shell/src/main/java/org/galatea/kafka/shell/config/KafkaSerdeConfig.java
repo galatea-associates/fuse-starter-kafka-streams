@@ -57,7 +57,7 @@ public class KafkaSerdeConfig {
     Map<SerdeType, ToStringDeserializer> serdeMap = new HashMap<>();
     serdeMap.put(new SerdeType(true, DataType.AVRO), (metadata, bytes) -> {
       GenericRecord genericRecord = deserializeAvro(avroKeySerde, metadata, bytes);
-      return genericRecord.toString();
+      return genericRecord == null ? "null" : genericRecord.toString();
     });
     serdeMap.put(new SerdeType(false, DataType.AVRO), (metadata, bytes) -> {
       GenericRecord genericRecord = deserializeAvro(avroValueSerde, metadata, bytes);
@@ -102,6 +102,9 @@ public class KafkaSerdeConfig {
   }
 
   private GenericRecord fixLogicalTypes(GenericRecord record) {
+    if (record == null) {
+      return null;
+    }
     Schema schema = record.getSchema();
     for (Field field : schema.getFields()) {
       Schema fieldType = field.schema();

@@ -4,3 +4,40 @@ messaging:
   state-dir: target/state-dir
 
 logging.level.ROOT: ERROR
+
+ssh:
+  shell:
+    enable: true
+    actuator.enable: true
+    # 'simple' or 'security'
+    authentication: simple
+    # if authentication set to 'security' the AuthenticationProvider bean name
+    # if not specified and only one AuthenticationProvider bean is present in the context, it will be used
+#    auth-provider-bean-name:
+    # for ssh helper 'confirm' method
+    confirmation-words:
+      - y
+      - yes
+    # set to false to disable following default built-in commands
+    default-commands:
+      jvm: true
+      postprocessors: true
+      thread: true
+    display-banner: true
+    # to use AnyOsFileValueProvider instead of spring shell FileValueProvider for all File option parameters
+    # if set to false, it still can be used via '@ShellOption(valueProvider = AnyOsFileValueProvider.class) File file'
+    any-os-file-provider: true
+    history-file: ./sshShellHistory.log
+    host: 127.0.0.1
+    host-key-file: ~/query-shell-host-key.ser
+    # displayed in log if generated
+    password: test
+    port: 2222
+    user: user
+    prompt:
+      # in enum: com.github.fonimus.ssh.shell.PromptColor (black, red, green, yellow, blue, magenta, cyan, white, bright)
+      color: white
+      text: 'shell>'
+      local:
+        # to let default local spring shell prompt when application starts
+        enable: false
