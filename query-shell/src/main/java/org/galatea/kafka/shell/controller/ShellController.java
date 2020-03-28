@@ -36,6 +36,8 @@ import org.springframework.shell.standard.ShellOption;
 @ShellComponent
 public class ShellController {
 
+  // TODO: add dependency for allowing ssh login
+
   private static final String REGEX_HELP = "search filter regex. Optional. more than 1 argument "
       + "will be used as additional filters resulting in regex1 AND regex2 AND ... ";
 
