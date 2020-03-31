@@ -124,11 +124,11 @@ public class KafkaSerdeConfig {
         } else if (logicalType.equals(LogicalTypes.timestampMicros())) {
           record.put(field.pos(), Instant.EPOCH.plus((long) fieldValue, ChronoUnit.MICROS));
         } else if (logicalType.equals(LogicalTypes.timeMillis())) {
-          record.put(field.pos(), LocalTime.ofNanoOfDay((long) fieldValue * 1000000));
+          record.put(field.pos(), LocalTime.ofNanoOfDay((int) fieldValue * 1000000));
         } else if (logicalType.equals(LogicalTypes.timeMicros())) {
           record.put(field.pos(), LocalTime.ofNanoOfDay((long) fieldValue * 1000));
         } else if (logicalType.equals(LogicalTypes.date())) {
-          record.put(field.pos(), LocalDate.ofEpochDay((Long) fieldValue));
+          record.put(field.pos(), LocalDate.ofEpochDay((int) fieldValue));
         } else {
           throw new IllegalArgumentException(
               String.format("Unconfigured logical type %s", logicalType.toString()));
