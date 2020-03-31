@@ -5,6 +5,8 @@ messaging:
 
 logging.level.ROOT: ERROR
 
+shell.query.max-results: 50
+
 ssh:
   shell:
     enable: true

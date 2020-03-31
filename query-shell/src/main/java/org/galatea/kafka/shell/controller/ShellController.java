@@ -28,6 +28,7 @@ import org.galatea.kafka.shell.stores.ConsumerRecordTable;
 import org.galatea.kafka.shell.util.DbRecordStringUtil;
 import org.galatea.kafka.shell.util.RegexPredicate;
 import org.galatea.kafka.starter.util.Pair;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.shell.standard.ShellMethod;
 import org.springframework.shell.standard.ShellOption;
 
@@ -48,6 +49,8 @@ public class ShellController {
   private final AdminClient adminClient;
   private final SchemaRegistryController schemaRegistryController;
   private final KafkaSerdeController kafkaSerdeController;
+  @Value("${shell.query.max-results}")
+  private long maxQueryResults;
 
   public ShellController(RecordStoreController recordStoreController,
       ConsumerThreadController consumerThreadController, StatusController statusController,
@@ -103,6 +106,7 @@ public class ShellController {
 
   @ShellMethod("Search a store using REGEX")
   public String query(@ShellOption String storeName, @ShellOption boolean detail,
+      @ShellOption boolean all,
       /* DO NOT put arguments after an option that uses VARARGS since VARARGS will use all remaining arguments*/
       @ShellOption(help = REGEX_HELP, arity = StandardWithVarargsResolver.VARARGS_ARITY) String[] regexFilter) {
 
@@ -133,6 +137,7 @@ public class ShellController {
     results.sort(Comparator.comparing(o -> o.getValue().getRecordTimestamp().get()));
     Instant endTime = Instant.now();
 
+    long recordCount = 0;
     for (Pair<DbRecordKey, DbRecord> entry : results) {
       ob.append(readableTimestamp(entry.getValue().getRecordTimestamp().get()));
       if (detail) {
@@ -140,6 +145,12 @@ public class ShellController {
             .append(entry.getValue().getOffset()).append("]");
       }
       ob.append(": ").append(DbRecordStringUtil.recordToString(entry)).append("\n");
+
+      if (!all && ++recordCount >= maxQueryResults) {
+        ob.append("\nResults limited to max-query-results (").append(maxQueryResults)
+            .append("); use --all to get more");
+        break;
+      }
     }
 
     ob.append("\n").append(results.size()).append(" Results found in ")
