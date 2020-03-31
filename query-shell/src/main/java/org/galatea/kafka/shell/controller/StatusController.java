@@ -11,11 +11,13 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import lombok.Data;
@@ -25,6 +27,7 @@ import org.apache.avro.Schema;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.DescribeTopicsResult;
 import org.apache.kafka.clients.admin.TopicDescription;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.TopicPartitionInfo;
@@ -78,7 +81,8 @@ public class StatusController {
     return consumerThreadController.consumerStatus();
   }
 
-  public String printableDetails(ShellEntityType type, String name, String[] parameters)
+  public String printableDetails(ShellEntityType type, String name, boolean detail,
+      String[] parameters)
       throws ExecutionException, InterruptedException, IOException, RestClientException {
     switch (type) {
       case TOPIC:
@@ -87,9 +91,104 @@ public class StatusController {
         return describeStore(name);
       case SCHEMA:
         return describeSchema(name, parameters);
+      case CONSUMER_GROUP:
+        return describeConsumerGroup(name, detail);
       default:
         return String.format("Unknown entity type %s", type);
     }
+  }
+
+  private String describeConsumerGroup(String name, boolean detail)
+      throws ExecutionException, InterruptedException {
+    Map<TopicPartition, OffsetAndMetadata> commitOffsets = adminClient
+        .listConsumerGroupOffsets(name).partitionsToOffsetAndMetadata().get();
+
+    Set<String> topics = commitOffsets.keySet().stream().map(TopicPartition::topic)
+        .collect(Collectors.toSet());
+
+    StringBuilder output = new StringBuilder();
+
+    Map<TopicPartition, Long> endOffsets = new HashMap<>();
+    for (String topic : topics) {
+      endOffsets.putAll(consumerThreadController.getTopicEndOffsets(topic));
+    }
+
+    List<List<String>> table = new ArrayList<>();
+    List<String> header = new ArrayList<>();
+    header.add("Topic");
+    if (detail) {
+      header.add("Partition");
+    }
+    header.add("CommitOffset");
+    header.add("EndOffset");
+    header.add("Lag");
+    table.add(header);
+
+    List<Entry<TopicPartition, Long>> endOffsetsInOrder = endOffsets.entrySet().stream()
+        .sorted((o1, o2) -> {
+          if (o1.getKey().topic().equals(o2.getKey().topic())) {
+            return Integer.compare(o1.getKey().partition(), o2.getKey().partition());
+          }
+          return o1.getKey().topic().compareTo(o2.getKey().topic());
+        }).collect(Collectors.toList());
+
+    if (detail) {
+      endOffsetsInOrder.forEach(entry -> {
+        String lag = "-";
+        String commitOffsetString = "-";
+        if (commitOffsets.containsKey(entry.getKey())) {
+          OffsetAndMetadata commitOffset = commitOffsets.get(entry.getKey());
+          lag = String.valueOf(entry.getValue() - commitOffset.offset());
+          commitOffsetString = String.valueOf(commitOffset.offset());
+        }
+        table.add(Arrays.asList(entry.getKey().topic(), String.valueOf(entry.getKey().partition()),
+            commitOffsetString, entry.getValue().toString(), lag));
+      });
+      output.append(printableTable(table));
+    } else {
+      Map<String, Long> endOffsetsSummedByTopic = new HashMap<>();
+      Map<String, Long> commitOffsetsSummedByTopic = new HashMap<>();
+      List<String> alphabeticalTopics = new ArrayList<>();
+
+      Set<String> topicsWithNoCommitPartitions = new HashSet<>();
+      endOffsetsInOrder.forEach(
+          entry -> {
+            if (alphabeticalTopics.isEmpty() || !alphabeticalTopics
+                .get(alphabeticalTopics.size() - 1).equals(entry.getKey().topic())) {
+              alphabeticalTopics.add(entry.getKey().topic());
+            }
+
+            OffsetAndMetadata commitOffset = commitOffsets.get(entry.getKey());
+            commitOffsetsSummedByTopic.putIfAbsent(entry.getKey().topic(), 0L);
+            if (commitOffset != null) {
+              commitOffsetsSummedByTopic.computeIfPresent(entry.getKey().topic(),
+                  (key, partCommitOffset) -> partCommitOffset + commitOffset.offset());
+            } else {
+              topicsWithNoCommitPartitions.add(entry.getKey().topic());
+            }
+            endOffsetsSummedByTopic.compute(entry.getKey().topic(), (key, endOffset) ->
+                Optional.ofNullable(endOffset).orElse(0L) + entry.getValue());
+          });
+
+      boolean lagNoteExist = false;
+      for (String topic : alphabeticalTopics) {
+        Long commitOffset = commitOffsetsSummedByTopic.get(topic);
+        Long endOffset = endOffsetsSummedByTopic.get(topic);
+        boolean topicHasNoCommitPartition = topicsWithNoCommitPartitions.contains(topic);
+        String lagNote = topicHasNoCommitPartition ? "*" : "";
+        lagNoteExist = lagNoteExist || topicHasNoCommitPartition;
+
+        table.add(Arrays.asList(topic, commitOffset.toString(), endOffset.toString(),
+            (endOffset - commitOffset) + lagNote));
+      }
+
+      output.append(printableTable(table));
+      if (lagNoteExist) {
+        output.append("* Lag may be higher due to the presence of un-committed partitions");
+      }
+    }
+
+    return output.toString();
   }
 
   private String describeSchema(String name, String[] parameters)
@@ -99,7 +198,8 @@ public class StatusController {
     Optional<Integer> version;
     if (parameters.length == 0) {
       sb.append("Retrieving latest version of schema since version was not specified\n");
-      version = schemaRegistryController.getLatesSchemaMetadata(name).map(SchemaMetadata::getVersion);
+      version = schemaRegistryController.getLatesSchemaMetadata(name)
+          .map(SchemaMetadata::getVersion);
     } else {
       if (parameters.length > 1) {
         sb.append(String.format("Using first parameter '%s' as version number", parameters[0]));

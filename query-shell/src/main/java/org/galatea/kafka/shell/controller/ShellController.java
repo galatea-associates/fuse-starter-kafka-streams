@@ -35,7 +35,9 @@ import org.springframework.shell.standard.ShellOption;
 @SshShellComponent
 public class ShellController {
 
-  // TODO: add dependency for allowing ssh login
+  // TODO: add default limit of 50 records, which can be disabled with argument
+  // TODO: add consumer group consumption rate (per partition, summed for per-topic and total)
+  // TODO: add cron schedule for purging tables
   // TODO: active-listen command for seeing new messages arrive
   private static final String REGEX_HELP = "search filter regex. Optional. more than 1 argument "
       + "will be used as additional filters resulting in regex1 AND regex2 AND ... ";
@@ -86,11 +88,12 @@ public class ShellController {
   }
 
   @ShellMethod("Get details about an entity")
-  public String describe(@ShellOption ShellEntityType entityType, @ShellOption String name,
+  public String describe(@ShellOption ShellEntityType entityType, @ShellOption boolean detail,
+      @ShellOption String name,
       /* DO NOT put arguments after an option that uses VARARGS since VARARGS will use all remaining arguments*/
       @ShellOption(arity = StandardWithVarargsResolver.VARARGS_ARITY) String[] parameters)
       throws ExecutionException, InterruptedException, IOException, RestClientException {
-    return statusController.printableDetails(entityType, name, parameters);
+    return statusController.printableDetails(entityType, name, detail, parameters);
   }
 
   @ShellMethod("Get status of the service")

@@ -14,6 +14,7 @@ import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.common.TopicPartition;
 import org.galatea.kafka.shell.consumer.ConsumerRunner;
 import org.galatea.kafka.shell.consumer.request.ConsumerOffsetRequest;
+import org.galatea.kafka.shell.consumer.request.TopicOffsetRequest;
 import org.galatea.kafka.shell.domain.ConsumerProperties;
 import org.galatea.kafka.shell.domain.TopicPartitionOffsets;
 import org.galatea.kafka.shell.stores.ConsumerRecordTable;
@@ -110,5 +111,9 @@ public class ConsumerThreadController {
     return outputSet;
   }
 
-
+  public Map<TopicPartition, Long> getTopicEndOffsets(String name) throws InterruptedException {
+    TopicOffsetRequest request = new TopicOffsetRequest(name);
+    runner.getProperties().getPendingRequests().add(request);
+    return request.get();
+  }
 }
