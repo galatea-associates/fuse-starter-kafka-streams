@@ -29,6 +29,8 @@ import org.galatea.kafka.shell.util.DbRecordStringUtil;
 import org.galatea.kafka.shell.util.RegexPredicate;
 import org.galatea.kafka.starter.util.Pair;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.TaskScheduler;
+import org.springframework.scheduling.support.CronTrigger;
 import org.springframework.shell.standard.ShellMethod;
 import org.springframework.shell.standard.ShellOption;
 
@@ -51,12 +53,15 @@ public class ShellController {
   private final KafkaSerdeController kafkaSerdeController;
   @Value("${shell.query.max-results}")
   private long maxQueryResults;
+  @Value("${shell.store.reset-all-cron}")
+  private String resetStoresCron;
 
   public ShellController(RecordStoreController recordStoreController,
       ConsumerThreadController consumerThreadController, StatusController statusController,
       MessagingConfig messagingConfig, AdminClient adminClient,
       SchemaRegistryController schemaRegistryController,
-      KafkaSerdeController kafkaSerdeController) throws Exception {
+      KafkaSerdeController kafkaSerdeController,
+      TaskScheduler scheduler) throws Exception {
     this.recordStoreController = recordStoreController;
     this.consumerThreadController = consumerThreadController;
     this.statusController = statusController;
@@ -64,6 +69,10 @@ public class ShellController {
     this.schemaRegistryController = schemaRegistryController;
     this.kafkaSerdeController = kafkaSerdeController;
 
+    if (resetStoresCron != null) {
+      scheduler.schedule(() -> recordStoreController.getTables().keySet().forEach(this::stopListen),
+          new CronTrigger(resetStoresCron));
+    }
     try {
       String clusterId = adminClient.describeCluster().clusterId().get();
       System.out

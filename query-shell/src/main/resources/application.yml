@@ -5,7 +5,9 @@ messaging:
 
 logging.level.ROOT: ERROR
 
-shell.query.max-results: 50
+shell:
+  store.reset-all-cron: 0 0 0 * * *
+  query.max-results: 50
 
 ssh:
   shell:
