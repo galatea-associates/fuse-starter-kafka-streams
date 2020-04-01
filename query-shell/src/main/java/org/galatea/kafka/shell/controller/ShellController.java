@@ -38,10 +38,7 @@ import org.springframework.shell.standard.ShellOption;
 @SshShellComponent
 public class ShellController {
 
-  // TODO: add default limit of 50 records, which can be disabled with argument
   // TODO: add consumer group consumption rate (per partition, summed for per-topic and total)
-  // TODO: add cron schedule for purging tables
-  // TODO: active-listen command for seeing new messages arrive
   private static final String REGEX_HELP = "search filter regex. Optional. more than 1 argument "
       + "will be used as additional filters resulting in regex1 AND regex2 AND ... ";
 
@@ -51,6 +48,8 @@ public class ShellController {
   private final AdminClient adminClient;
   private final SchemaRegistryController schemaRegistryController;
   private final KafkaSerdeController kafkaSerdeController;
+  private final MessagingConfig messagingConfig;
+  private boolean connected = false;
   @Value("${shell.query.max-results}")
   private long maxQueryResults;
   @Value("${shell.store.reset-all-cron}")
@@ -68,23 +67,39 @@ public class ShellController {
     this.adminClient = adminClient;
     this.schemaRegistryController = schemaRegistryController;
     this.kafkaSerdeController = kafkaSerdeController;
+    this.messagingConfig = messagingConfig;
 
     if (resetStoresCron != null) {
       scheduler.schedule(() -> recordStoreController.getTables().keySet().forEach(this::stopListen),
           new CronTrigger(resetStoresCron));
     }
-    try {
-      String clusterId = adminClient.describeCluster().clusterId().get();
-      System.out
-          .println(String.format("Connected to brokers: %s", messagingConfig.getBootstrapServer()));
-      System.out.println(String
-          .format("Connected to schema registry: %s", messagingConfig.getSchemaRegistryUrl()));
-      System.out.println(String.format("Cluster ID: %s", clusterId));
-    } catch (ExecutionException e) {
-      log.error("Could not connect to brokers {}", messagingConfig.getBootstrapServer());
+
+    System.out.println(getConnectionStatus(messagingConfig, adminClient));
+    if (!connected) {
       System.exit(1);
     }
+  }
 
+  private String getConnectionStatus(MessagingConfig messagingConfig, AdminClient adminClient)
+      throws InterruptedException {
+    StringBuilder sb = new StringBuilder();
+    try {
+      String clusterId = adminClient.describeCluster().clusterId().get();
+      if (messagingConfig.getEnvironmentId() != null) {
+        sb.append(
+            String.format("Environment: %s\n", messagingConfig.getEnvironmentId()));
+      }
+      sb.append(String.format("Connected to brokers: %s\n", messagingConfig.getBootstrapServer()));
+      sb.append(String
+          .format("Connected to schema registry: %s\n", messagingConfig.getSchemaRegistryUrl()));
+      sb.append(String.format("Cluster ID: %s\n", clusterId));
+      connected = true;
+    } catch (ExecutionException e) {
+      sb.append(
+          String.format("Could not connect to brokers %s\n", messagingConfig.getBootstrapServer()));
+      connected = false;
+    }
+    return sb.toString();
   }
 
   @ShellMethod(value = "Stop listening to a topic and remove subscribed stores", key = "stop-listen")
@@ -110,7 +125,7 @@ public class ShellController {
 
   @ShellMethod("Get status of the service")
   public String status() throws InterruptedException {
-    return statusController.printableStatus();
+    return getConnectionStatus(messagingConfig, adminClient) + "\n" + statusController.printableStatus();
   }
 
   @ShellMethod("Search a store using REGEX")

@@ -313,7 +313,7 @@ public class StatusController {
                 recordStoreController.aliasFor(key).orElse(""))));
     sb.append(printableTable(table));
 
-    sb.append("Consumer Topics :\n");
+    sb.append("\nConsumer Topics :\n");
     List<List<String>> topicTable = new ArrayList<>();
     topicTable.add(Arrays.asList("Topic", "Lag", "# Consumed"));
     consumerLagByTopic().forEach((topic, stat) -> topicTable

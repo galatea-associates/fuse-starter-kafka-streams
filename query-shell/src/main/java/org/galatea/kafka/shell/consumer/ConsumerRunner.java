@@ -104,7 +104,6 @@ public class ConsumerRunner implements Runnable, ApplicationContextAware {
   private void removeErrorTopicsFromAssignment(ConsumerProperties properties,
       Set<String> errorTopics) {
 
-    // TODO: trying to subscribe to same topic again with different configuration (after error) doesn't do anything
     List<TopicPartition> assignmentWithoutErrorTopics = properties.getAssignment()
         .stream()
         .filter(topicPartition -> !errorTopics.contains(topicPartition.topic()))
@@ -129,6 +128,9 @@ public class ConsumerRunner implements Runnable, ApplicationContextAware {
       ConsumerProperties properties) {
 
     consumer.assign(properties.getAssignment());
+    properties.getLatestOffset()
+        .forEach((partition, offset) -> consumer.seek(partition, offset + 1));
+
     log.info("Updated consumer assignment: {}", properties);
 
     if (!properties.getAssignment().isEmpty()) {

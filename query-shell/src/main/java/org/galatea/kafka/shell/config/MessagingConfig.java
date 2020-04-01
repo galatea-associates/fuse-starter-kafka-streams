@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "messaging")
 public class MessagingConfig {
 
+  private String environmentId;
   private String bootstrapServer;
   private String schemaRegistryUrl;
   private String stateDir;

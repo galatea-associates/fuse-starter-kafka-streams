@@ -6,7 +6,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.AdminClient;
@@ -49,8 +48,7 @@ public class ConsumerThreadController {
     consumerThread.start();
   }
 
-  public boolean addTopicToAssignment(String topic)
-      throws ExecutionException, InterruptedException {
+  public boolean addTopicToAssignment(String topic) {
     log.info("Adding topic {} to assignment", topic);
     try {
       List<TopicPartition> addToAssignment = getTopicPartition(topic);
