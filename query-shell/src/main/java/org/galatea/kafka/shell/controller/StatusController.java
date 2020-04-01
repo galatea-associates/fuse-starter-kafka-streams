@@ -11,7 +11,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -20,7 +19,9 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
+import lombok.AccessLevel;
 import lombok.Data;
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.Schema;
@@ -146,49 +147,69 @@ public class StatusController {
       });
       output.append(printableTable(table));
     } else {
-      Map<String, Long> endOffsetsSummedByTopic = new HashMap<>();
-      Map<String, Long> commitOffsetsSummedByTopic = new HashMap<>();
-      List<String> alphabeticalTopics = new ArrayList<>();
+      Map<String, CommitAndEndOffsets> topicSummedOffsets = new HashMap<>();
+      List<String> alphabeticalTopics = endOffsets.keySet().stream().map(TopicPartition::topic)
+          .distinct().collect(Collectors.toList());
 
-      Set<String> topicsWithNoCommitPartitions = new HashSet<>();
-      endOffsetsInOrder.forEach(
-          entry -> {
-            if (alphabeticalTopics.isEmpty() || !alphabeticalTopics
-                .get(alphabeticalTopics.size() - 1).equals(entry.getKey().topic())) {
-              alphabeticalTopics.add(entry.getKey().topic());
-            }
+      // sum up offsets by partition
+      endOffsets.forEach((topicPartition, topicPartEndOffset) -> {
 
-            OffsetAndMetadata commitOffset = commitOffsets.get(entry.getKey());
-            commitOffsetsSummedByTopic.putIfAbsent(entry.getKey().topic(), 0L);
-            if (commitOffset != null) {
-              commitOffsetsSummedByTopic.computeIfPresent(entry.getKey().topic(),
-                  (key, partCommitOffset) -> partCommitOffset + commitOffset.offset());
-            } else {
-              topicsWithNoCommitPartitions.add(entry.getKey().topic());
-            }
-            endOffsetsSummedByTopic.compute(entry.getKey().topic(), (key, endOffset) ->
-                Optional.ofNullable(endOffset).orElse(0L) + entry.getValue());
-          });
+        CommitAndEndOffsets offsets = topicSummedOffsets
+            .computeIfAbsent(topicPartition.topic(), topic -> new CommitAndEndOffsets());
 
-      boolean lagNoteExist = false;
+        OffsetAndMetadata commitOffset = commitOffsets.get(topicPartition);
+        if (commitOffset != null) {
+          offsets.addToCommitOffset(commitOffset.offset());
+          offsets.addToEndOffset(topicPartEndOffset);
+        } else {
+          offsets.setHasUncommittedPartitions(true);
+        }
+      });
+
+      boolean lagAsteriskExist = false;
       for (String topic : alphabeticalTopics) {
-        Long commitOffset = commitOffsetsSummedByTopic.get(topic);
-        Long endOffset = endOffsetsSummedByTopic.get(topic);
-        boolean topicHasNoCommitPartition = topicsWithNoCommitPartitions.contains(topic);
-        String lagNote = topicHasNoCommitPartition ? "*" : "";
-        lagNoteExist = lagNoteExist || topicHasNoCommitPartition;
+        CommitAndEndOffsets offsets = topicSummedOffsets.get(topic);
+        boolean topicHasNoCommitPartition = offsets.hasUncommittedPartitions();
+        String lagAsterisk = topicHasNoCommitPartition ? "*" : "";
+        lagAsteriskExist = lagAsteriskExist || topicHasNoCommitPartition;
 
-        table.add(Arrays.asList(topic, commitOffset.toString(), endOffset.toString(),
-            (endOffset - commitOffset) + lagNote));
+        table.add(Arrays.asList(topic, String.valueOf(offsets.getCommitOffset()),
+            String.valueOf(offsets.getEndOffset()), offsets.getLag() + lagAsterisk));
       }
 
       output.append(printableTable(table));
-      if (lagNoteExist) {
-        output.append("* Lag may be higher due to the presence of un-committed partitions");
+      if (lagAsteriskExist) {
+        output.append("* Lag may be higher due to the presence of un-committed partitions, "
+            + "un-committed partitions did not contribute to end-offset or lag");
       }
     }
 
     return output.toString();
+  }
+
+  @Data
+  private static class CommitAndEndOffsets {
+
+    private long commitOffset = 0;
+    private long endOffset = 0;
+    @Getter(AccessLevel.NONE)
+    private boolean hasUncommittedPartitions = false;
+
+    public boolean hasUncommittedPartitions() {
+      return hasUncommittedPartitions;
+    }
+
+    private void addToCommitOffset(long offset) {
+      commitOffset += offset;
+    }
+
+    private void addToEndOffset(long offset) {
+      endOffset += offset;
+    }
+
+    private long getLag() {
+      return endOffset - commitOffset;
+    }
   }
 
   private String describeSchema(String name, String[] parameters)

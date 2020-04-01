@@ -39,6 +39,7 @@ import org.springframework.shell.standard.ShellOption;
 public class ShellController {
 
   // TODO: add consumer group consumption rate (per partition, summed for per-topic and total)
+  // TODO: figure out how to parse ShellEntityType without requiring caps, and replacing "-" with "_"
   private static final String REGEX_HELP = "search filter regex. Optional. more than 1 argument "
       + "will be used as additional filters resulting in regex1 AND regex2 AND ... ";
 
