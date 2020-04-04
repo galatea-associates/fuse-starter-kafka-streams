@@ -1,5 +1,8 @@
 package org.galatea.kafka.shell.controller;
 
+import static org.galatea.kafka.shell.domain.TopicOffsetType.COMMIT_OFFSET;
+import static org.galatea.kafka.shell.domain.TopicOffsetType.END_OFFSET;
+
 import io.confluent.kafka.schemaregistry.client.SchemaMetadata;
 import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import java.io.IOException;
@@ -11,6 +14,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -18,25 +22,25 @@ import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
-import lombok.AccessLevel;
 import lombok.Data;
-import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.Schema;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.DescribeTopicsResult;
 import org.apache.kafka.clients.admin.TopicDescription;
-import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.TopicPartitionInfo;
+import org.apache.logging.log4j.util.Strings;
 import org.galatea.kafka.shell.domain.ConsumerProperties;
+import org.galatea.kafka.shell.domain.OffsetMap;
 import org.galatea.kafka.shell.domain.PartitionConsumptionStatus;
 import org.galatea.kafka.shell.domain.ShellEntityType;
 import org.galatea.kafka.shell.domain.StoreStatus;
-import org.galatea.kafka.shell.domain.TopicPartitionOffsets;
+import org.galatea.kafka.shell.domain.TopicOffsetType;
 import org.galatea.kafka.shell.stores.ConsumerRecordTable;
 import org.galatea.kafka.starter.util.Pair;
 import org.springframework.stereotype.Component;
@@ -48,6 +52,7 @@ public class StatusController {
 
   private final RecordStoreController recordStoreController;
   private final ConsumerThreadController consumerThreadController;
+  private final ConsumerGroupMonitor consumerGroupMonitor;
   private final AdminClient adminClient;
   private final SchemaRegistryController schemaRegistryController;
   private final NumberFormat numberFormat = NumberFormat.getNumberInstance(Locale.US);
@@ -78,10 +83,6 @@ public class StatusController {
     return consumerStatus;
   }
 
-  private Map<TopicPartition, TopicPartitionOffsets> topicStatus() throws InterruptedException {
-    return consumerThreadController.consumerStatus();
-  }
-
   public String printableDetails(ShellEntityType type, String name, boolean detail,
       String[] parameters)
       throws ExecutionException, InterruptedException, IOException, RestClientException {
@@ -101,18 +102,6 @@ public class StatusController {
 
   private String describeConsumerGroup(String name, boolean detail)
       throws ExecutionException, InterruptedException {
-    Map<TopicPartition, OffsetAndMetadata> commitOffsets = adminClient
-        .listConsumerGroupOffsets(name).partitionsToOffsetAndMetadata().get();
-
-    Set<String> topics = commitOffsets.keySet().stream().map(TopicPartition::topic)
-        .collect(Collectors.toSet());
-
-    StringBuilder output = new StringBuilder();
-
-    Map<TopicPartition, Long> endOffsets = new HashMap<>();
-    for (String topic : topics) {
-      endOffsets.putAll(consumerThreadController.getTopicEndOffsets(topic));
-    }
 
     List<List<String>> table = new ArrayList<>();
     List<String> header = new ArrayList<>();
@@ -125,91 +114,66 @@ public class StatusController {
     header.add("Lag");
     table.add(header);
 
-    List<Entry<TopicPartition, Long>> endOffsetsInOrder = endOffsets.entrySet().stream()
-        .sorted((o1, o2) -> {
-          if (o1.getKey().topic().equals(o2.getKey().topic())) {
-            return Integer.compare(o1.getKey().partition(), o2.getKey().partition());
-          }
-          return o1.getKey().topic().compareTo(o2.getKey().topic());
-        }).collect(Collectors.toList());
+    Comparator<Entry<TopicPartition, OffsetMap>> topicPartComparator = (o1, o2) -> {
+      if (o1.getKey().topic().equals(o2.getKey().topic())) {
+        return Integer.compare(o1.getKey().partition(), o2.getKey().partition());
+      }
+      return o1.getKey().topic().compareTo(o2.getKey().topic());
+    };
 
+    Map<TopicPartition, OffsetMap> partitionOffsets = consumerGroupMonitor
+        .getPartitionOffsets(name);
+
+    AtomicBoolean lagAsteriskExist = new AtomicBoolean(false);
     if (detail) {
-      endOffsetsInOrder.forEach(entry -> {
+      List<Entry<TopicPartition, OffsetMap>> sortedPartitionOffsets = partitionOffsets
+          .entrySet().stream().sorted(topicPartComparator).collect(Collectors.toList());
+
+      sortedPartitionOffsets.forEach(entry -> {
+        OffsetMap offsetMap = entry.getValue();
         String lag = "-";
         String commitOffsetString = "-";
-        if (commitOffsets.containsKey(entry.getKey())) {
-          OffsetAndMetadata commitOffset = commitOffsets.get(entry.getKey());
-          lag = String.valueOf(entry.getValue() - commitOffset.offset());
-          commitOffsetString = String.valueOf(commitOffset.offset());
+
+        if (offsetMap.containsKey(COMMIT_OFFSET)) {
+          lag = String.valueOf(offsetMap.get(END_OFFSET) - offsetMap.get(COMMIT_OFFSET));
+          commitOffsetString = String.valueOf(offsetMap.get(COMMIT_OFFSET));
         }
         table.add(Arrays.asList(entry.getKey().topic(), String.valueOf(entry.getKey().partition()),
-            commitOffsetString, entry.getValue().toString(), lag));
+            commitOffsetString, String.valueOf(offsetMap.get(END_OFFSET)), lag));
       });
-      output.append(printableTable(table));
     } else {
-      Map<String, CommitAndEndOffsets> topicSummedOffsets = new HashMap<>();
-      List<String> alphabeticalTopics = endOffsets.keySet().stream().map(TopicPartition::topic)
-          .distinct().collect(Collectors.toList());
+      List<Entry<String, OffsetMap>> sortedTopicOffsets = consumerGroupMonitor
+          .sumOffsetsByTopic(partitionOffsets).entrySet().stream().sorted(Entry.comparingByKey())
+          .collect(Collectors.toList());
 
-      // sum up offsets by partition
-      endOffsets.forEach((topicPartition, topicPartEndOffset) -> {
-
-        CommitAndEndOffsets offsets = topicSummedOffsets
-            .computeIfAbsent(topicPartition.topic(), topic -> new CommitAndEndOffsets());
-
-        OffsetAndMetadata commitOffset = commitOffsets.get(topicPartition);
-        if (commitOffset != null) {
-          offsets.addToCommitOffset(commitOffset.offset());
-          offsets.addToEndOffset(topicPartEndOffset);
-        } else {
-          offsets.setHasUncommittedPartitions(true);
+      // determine which topics don't have commits for every partition
+      Set<String> topicsMissingPartitionCommit = new HashSet<>();
+      partitionOffsets.forEach((topicPart, offsetMap) -> {
+        if (!offsetMap.containsKey(COMMIT_OFFSET)) {
+          topicsMissingPartitionCommit.add(topicPart.topic());
         }
       });
 
-      boolean lagAsteriskExist = false;
-      for (String topic : alphabeticalTopics) {
-        CommitAndEndOffsets offsets = topicSummedOffsets.get(topic);
-        boolean topicHasNoCommitPartition = offsets.hasUncommittedPartitions();
-        String lagAsterisk = topicHasNoCommitPartition ? "*" : "";
-        lagAsteriskExist = lagAsteriskExist || topicHasNoCommitPartition;
+      sortedTopicOffsets.forEach(entry -> {
+        String lagAsterisk =
+            topicsMissingPartitionCommit.contains(entry.getKey()) ? "*" : Strings.EMPTY;
+        lagAsteriskExist.compareAndSet(false, !lagAsterisk.isEmpty());
 
-        table.add(Arrays.asList(topic, String.valueOf(offsets.getCommitOffset()),
-            String.valueOf(offsets.getEndOffset()), offsets.getLag() + lagAsterisk));
-      }
-
-      output.append(printableTable(table));
-      if (lagAsteriskExist) {
-        output.append("* Lag may be higher due to the presence of un-committed partitions, "
-            + "un-committed partitions did not contribute to end-offset or lag");
-      }
+        OffsetMap offsetMap = entry.getValue();
+        table.add(Arrays.asList(entry.getKey(), String.valueOf(offsetMap.get(COMMIT_OFFSET)),
+            String.valueOf(offsetMap.get(END_OFFSET)),
+            (offsetMap.get(END_OFFSET) - offsetMap.get(COMMIT_OFFSET)) + lagAsterisk));
+      });
     }
 
+    StringBuilder output = new StringBuilder();
+
+    output.append(printableTable(table));
+    if (lagAsteriskExist.get()) {
+      output.append("* Lag may be higher due to the presence of un-committed partitions, "
+          + "un-committed partitions did not contribute to end-offset or lag");
+    }
     return output.toString();
-  }
-
-  @Data
-  private static class CommitAndEndOffsets {
-
-    private long commitOffset = 0;
-    private long endOffset = 0;
-    @Getter(AccessLevel.NONE)
-    private boolean hasUncommittedPartitions = false;
-
-    public boolean hasUncommittedPartitions() {
-      return hasUncommittedPartitions;
-    }
-
-    private void addToCommitOffset(long offset) {
-      commitOffset += offset;
-    }
-
-    private void addToEndOffset(long offset) {
-      endOffset += offset;
-    }
-
-    private long getLag() {
-      return endOffset - commitOffset;
-    }
   }
 
   private String describeSchema(String name, String[] parameters)
@@ -297,11 +261,12 @@ public class StatusController {
   }
 
   private Map<String, ConsumerStat> consumerLagByTopic() throws InterruptedException {
-    Map<TopicPartition, TopicPartitionOffsets> topicStatus = topicStatus();
+    Map<TopicPartition, OffsetMap> topicStatus = consumerThreadController
+        .getConsumerOffsets();
     Map<TopicPartition, PartitionConsumptionStatus> consumerStatus = consumerStatus();
 
     Map<String, ConsumerStat> outputMap = new HashMap<>();
-    topicStatus.forEach((topicPartition, partitionOffsets) -> {
+    topicStatus.forEach((topicPartition, partOffsets) -> {
 
       PartitionConsumptionStatus partitionConsumptionStatus = consumerStatus.get(topicPartition);
       long latestOffsetSeen = 1;
@@ -310,12 +275,15 @@ public class StatusController {
         latestOffsetSeen = partitionConsumptionStatus.getLatestOffsets();
         consumedMessages = partitionConsumptionStatus.getConsumedMessages();
       }
-      latestOffsetSeen = Math.max(partitionOffsets.getBeginningOffset(), latestOffsetSeen);
+      latestOffsetSeen = Math
+          .max(partOffsets.get(TopicOffsetType.BEGIN_OFFSET), latestOffsetSeen);
 
       ConsumerStat stat = outputMap
           .computeIfAbsent(topicPartition.topic(), s -> new ConsumerStat());
-      if (partitionOffsets.getEndOffset() != partitionOffsets.getBeginningOffset()) {
-        stat.setLag(stat.getLag() + partitionOffsets.getEndOffset() - latestOffsetSeen - 1);
+      if (!partOffsets.get(END_OFFSET)
+          .equals(partOffsets.get(TopicOffsetType.BEGIN_OFFSET))) {
+        stat.setLag(
+            stat.getLag() + partOffsets.get(END_OFFSET) - latestOffsetSeen - 1);
       }
       stat.setConsumedMessages(stat.getConsumedMessages() + consumedMessages);
     });

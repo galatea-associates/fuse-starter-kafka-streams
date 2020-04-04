@@ -1,7 +1,7 @@
 package org.galatea.kafka.shell.controller;
 
+import java.util.Collection;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -12,10 +12,11 @@ import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.common.TopicPartition;
 import org.galatea.kafka.shell.consumer.ConsumerRunner;
-import org.galatea.kafka.shell.consumer.request.ConsumerOffsetRequest;
-import org.galatea.kafka.shell.consumer.request.TopicOffsetRequest;
+import org.galatea.kafka.shell.consumer.request.ConsumerRequest;
+import org.galatea.kafka.shell.consumer.request.ConsumerTopicOffsetsRequest;
+import org.galatea.kafka.shell.consumer.request.TopicOffsetsRequest;
 import org.galatea.kafka.shell.domain.ConsumerProperties;
-import org.galatea.kafka.shell.domain.TopicPartitionOffsets;
+import org.galatea.kafka.shell.domain.OffsetMap;
 import org.galatea.kafka.shell.stores.ConsumerRecordTable;
 import org.springframework.stereotype.Component;
 
@@ -23,18 +24,16 @@ import org.springframework.stereotype.Component;
 @Component
 public class ConsumerThreadController {
 
-  private final Thread consumerThread;
   private final ConsumerRunner runner;
   private final AdminClient adminClient;
 
-  public Map<TopicPartition, TopicPartitionOffsets> consumerStatus() throws InterruptedException {
+  public Map<TopicPartition, OffsetMap> getConsumerOffsets()
+      throws InterruptedException {
 
     if (runner.getProperties().getAssignment().isEmpty()) {
-      return new HashMap<>();
+      return Collections.emptyMap();
     }
-    ConsumerOffsetRequest request = new ConsumerOffsetRequest();
-    runner.getProperties().getPendingRequests().add(request);
-    return request.get();
+    return getRequestResponse(new ConsumerTopicOffsetsRequest());
   }
 
   public ConsumerProperties consumerProperties() {
@@ -44,7 +43,7 @@ public class ConsumerThreadController {
   public ConsumerThreadController(ConsumerRunner runner, AdminClient adminClient) {
     this.runner = runner;
     this.adminClient = adminClient;
-    this.consumerThread = new Thread(null, runner, "KafkaConsumer");
+    Thread consumerThread = new Thread(null, runner, "KafkaConsumer");
     consumerThread.start();
   }
 
@@ -109,9 +108,19 @@ public class ConsumerThreadController {
     return outputSet;
   }
 
-  public Map<TopicPartition, Long> getTopicEndOffsets(String name) throws InterruptedException {
-    TopicOffsetRequest request = new TopicOffsetRequest(name);
+  private <T> T getRequestResponse(ConsumerRequest<T> request) throws InterruptedException {
     runner.getProperties().getPendingRequests().add(request);
     return request.get();
   }
+
+  public Map<TopicPartition, OffsetMap> getTopicOffsets(String topic)
+      throws InterruptedException {
+    return getRequestResponse(new TopicOffsetsRequest(Collections.singletonList(topic)));
+  }
+
+  public Map<TopicPartition, OffsetMap> getTopicOffsets(Collection<String> topics)
+      throws InterruptedException {
+    return getRequestResponse(new TopicOffsetsRequest(topics));
+  }
+
 }

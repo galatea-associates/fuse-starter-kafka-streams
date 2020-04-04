@@ -4,20 +4,26 @@ import java.util.HashMap;
 import java.util.Map;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.common.TopicPartition;
-import org.galatea.kafka.shell.domain.TopicPartitionOffsets;
+import org.galatea.kafka.shell.domain.OffsetMap;
+import org.galatea.kafka.shell.domain.TopicOffsetType;
 
-public class ConsumerOffsetRequest extends
-    ConsumerRequest<Map<TopicPartition, TopicPartitionOffsets>> {
+public class ConsumerTopicOffsetsRequest extends
+    ConsumerRequest<Map<TopicPartition, OffsetMap>> {
 
   @Override
-  public Map<TopicPartition, TopicPartitionOffsets> fulfillRequest(
+  public Map<TopicPartition, OffsetMap> fulfillRequest(
       Consumer<byte[], byte[]> consumer) {
+
     Map<TopicPartition, Long> endOffsets = consumer.endOffsets(consumer.assignment());
     Map<TopicPartition, Long> beginningOffsets = consumer.beginningOffsets(consumer.assignment());
-    Map<TopicPartition, TopicPartitionOffsets> offsets = new HashMap<>();
+    Map<TopicPartition, OffsetMap> offsets = new HashMap<>();
     endOffsets.forEach(((topicPartition, endOffset) -> {
+
       Long beginningOffset = beginningOffsets.get(topicPartition);
-      offsets.put(topicPartition, new TopicPartitionOffsets(beginningOffset, endOffset));
+      OffsetMap partOffsets = offsets
+          .computeIfAbsent(topicPartition, key -> new OffsetMap());
+      partOffsets.put(TopicOffsetType.BEGIN_OFFSET, beginningOffset);
+      partOffsets.put(TopicOffsetType.END_OFFSET, endOffset);
     }));
     return offsets;
   }
