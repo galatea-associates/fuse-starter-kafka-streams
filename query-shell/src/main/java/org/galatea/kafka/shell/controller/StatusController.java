@@ -1,6 +1,7 @@
 package org.galatea.kafka.shell.controller;
 
 import static org.galatea.kafka.shell.domain.TopicOffsetType.COMMIT_OFFSET;
+import static org.galatea.kafka.shell.domain.TopicOffsetType.COMMIT_OFFSET_DELTA_PER_SECOND;
 import static org.galatea.kafka.shell.domain.TopicOffsetType.END_OFFSET;
 
 import io.confluent.kafka.schemaregistry.client.SchemaMetadata;
@@ -23,6 +24,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -112,22 +114,22 @@ public class StatusController {
     header.add("CommitOffset");
     header.add("EndOffset");
     header.add("Lag");
+    header.add("Consume Rate");
     table.add(header);
-
-    Comparator<Entry<TopicPartition, OffsetMap>> topicPartComparator = (o1, o2) -> {
-      if (o1.getKey().topic().equals(o2.getKey().topic())) {
-        return Integer.compare(o1.getKey().partition(), o2.getKey().partition());
-      }
-      return o1.getKey().topic().compareTo(o2.getKey().topic());
-    };
 
     Map<TopicPartition, OffsetMap> partitionOffsets = consumerGroupMonitor
         .getPartitionOffsets(name);
+    AtomicLong totalConsumeRate = new AtomicLong(0);
 
     AtomicBoolean lagAsteriskExist = new AtomicBoolean(false);
     if (detail) {
       List<Entry<TopicPartition, OffsetMap>> sortedPartitionOffsets = partitionOffsets
-          .entrySet().stream().sorted(topicPartComparator).collect(Collectors.toList());
+          .entrySet().stream().sorted((o1, o2) -> {
+            if (o1.getKey().topic().equals(o2.getKey().topic())) {
+              return Integer.compare(o1.getKey().partition(), o2.getKey().partition());
+            }
+            return o1.getKey().topic().compareTo(o2.getKey().topic());
+          }).collect(Collectors.toList());
 
       sortedPartitionOffsets.forEach(entry -> {
         OffsetMap offsetMap = entry.getValue();
@@ -138,8 +140,16 @@ public class StatusController {
           lag = String.valueOf(offsetMap.get(END_OFFSET) - offsetMap.get(COMMIT_OFFSET));
           commitOffsetString = String.valueOf(offsetMap.get(COMMIT_OFFSET));
         }
+
+        Long consumeRate = offsetMap.get(COMMIT_OFFSET_DELTA_PER_SECOND);
+        String consumeRateString = "";
+        if (consumeRate != null) {
+          consumeRateString = consumeRate.toString();
+          totalConsumeRate.addAndGet(consumeRate);
+        }
+
         table.add(Arrays.asList(entry.getKey().topic(), String.valueOf(entry.getKey().partition()),
-            commitOffsetString, String.valueOf(offsetMap.get(END_OFFSET)), lag));
+            commitOffsetString, String.valueOf(offsetMap.get(END_OFFSET)), lag, consumeRateString));
       });
     } else {
       List<Entry<String, OffsetMap>> sortedTopicOffsets = consumerGroupMonitor
@@ -159,10 +169,18 @@ public class StatusController {
             topicsMissingPartitionCommit.contains(entry.getKey()) ? "*" : Strings.EMPTY;
         lagAsteriskExist.compareAndSet(false, !lagAsterisk.isEmpty());
 
+        String consumeRateString = "";
+        Long consumeRate = entry.getValue().get(COMMIT_OFFSET_DELTA_PER_SECOND);
+        if (consumeRate != null && lagAsterisk.isEmpty()) {
+          consumeRateString = numberFormat.format(consumeRate);
+          totalConsumeRate.addAndGet(consumeRate);
+        }
+
         OffsetMap offsetMap = entry.getValue();
         table.add(Arrays.asList(entry.getKey(), String.valueOf(offsetMap.get(COMMIT_OFFSET)),
             String.valueOf(offsetMap.get(END_OFFSET)),
-            (offsetMap.get(END_OFFSET) - offsetMap.get(COMMIT_OFFSET)) + lagAsterisk));
+            (offsetMap.get(END_OFFSET) - offsetMap.get(COMMIT_OFFSET)) + lagAsterisk,
+            consumeRateString));
       });
     }
 
@@ -171,7 +189,10 @@ public class StatusController {
     output.append(printableTable(table));
     if (lagAsteriskExist.get()) {
       output.append("* Lag may be higher due to the presence of un-committed partitions, "
-          + "un-committed partitions did not contribute to end-offset or lag");
+          + "un-committed partitions did not contribute to end-offset or lag. "
+          + "Total consumption rate not available.");
+    } else {
+      output.append("Total consumption rate: ").append(numberFormat.format(totalConsumeRate.get()));
     }
     return output.toString();
   }
