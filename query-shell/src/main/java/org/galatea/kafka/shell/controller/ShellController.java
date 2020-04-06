@@ -38,6 +38,7 @@ import org.springframework.shell.standard.ShellOption;
 @SshShellComponent
 public class ShellController {
 
+  // TODO: add separate consumer thread per topic
   // TODO: add consumer group consumption rate (per partition, summed for per-topic and total)
   // TODO: figure out how to parse ShellEntityType without requiring caps, and replacing "-" with "_"
   private static final String REGEX_HELP = "search filter regex. Optional. more than 1 argument "
@@ -158,7 +159,7 @@ public class ShellController {
 
     List<Pair<DbRecordKey, DbRecord>> results = new ArrayList<>();
     Predicate<Pair<DbRecordKey, DbRecord>> predicate = predicateFromRegexPatterns(patterns);
-    store.doWith(predicate, results::add);
+    store.doWith(predicate, results::add, all ? Long.MAX_VALUE : maxQueryResults);
     results.sort(Comparator.comparing(o -> o.getValue().getRecordTimestamp().get()));
     Instant endTime = Instant.now();
 
@@ -191,6 +192,9 @@ public class ShellController {
   private Predicate<Pair<DbRecordKey, DbRecord>> predicateFromRegexPatterns(
       List<Pattern> patterns) {
     return pair -> {
+      if (pair.getValue().getStringValue() == null) {
+        return false;
+      }
       for (Pattern pattern : patterns) {
         if (!pattern.matcher(DbRecordStringUtil.recordToString(pair)).find()) {
           return false;

@@ -38,7 +38,7 @@ public class KafkaSerdeController {
     ToStringDeserializer keyConversion = registeredSerdes
         .get(new SerdeType(true, topicTypes.getKey()));
     ToStringDeserializer valueConversion = registeredSerdes
-        .get(new SerdeType(true, topicTypes.getValue()));
+        .get(new SerdeType(false, topicTypes.getValue()));
 
     RecordMetadata metadata = new RecordMetadata(record.offset(), record.partition(),
         record.timestamp(), record.topic());

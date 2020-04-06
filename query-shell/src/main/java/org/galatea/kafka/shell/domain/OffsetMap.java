@@ -1,6 +1,7 @@
 package org.galatea.kafka.shell.domain;
 
 import java.util.HashMap;
+import java.util.Optional;
 
 public class OffsetMap extends HashMap<TopicOffsetType, Long> {
 
@@ -11,13 +12,9 @@ public class OffsetMap extends HashMap<TopicOffsetType, Long> {
   public OffsetMap() {
   }
 
-  @Override
-  public Long get(Object key) {
-    return containsKey(key) ? super.get(key) : 0L;
-  }
-
   public OffsetMap add(OffsetMap other) {
-    other.forEach((offsetType, offset) -> put(offsetType, get(offsetType) + offset));
+    other.forEach((offsetType, offset) -> put(offsetType,
+        Optional.ofNullable(get(offsetType)).orElse(0L) + offset));
     return this;
   }
 }

@@ -41,18 +41,18 @@ public class RecordTable<K, V> implements Closeable {
     return Optional.ofNullable(getRaw(key));
   }
 
-  public void doWithAll(Consumer<Pair<K, V>> doWithRecord) {
-    doWith(entry -> true, doWithRecord);
-  }
+  public void doWith(Predicate<Pair<K, V>> predicate, Consumer<Pair<K, V>> doWithRecord,
+      long maxResults) {
 
-  public void doWith(Predicate<Pair<K, V>> predicate, Consumer<Pair<K, V>> doWithRecord) {
     validateStoreOpen();
     RocksIterator it = db.newIterator();
     it.seekToFirst();
-    while (it.isValid()) {
+    long processedRecords = 0;
+    while (it.isValid() && processedRecords < maxResults) {
       Pair<K, V> pair = Pair.of(deserializeKey(it.key()), deserializeValue(it.value()));
       if (predicate.test(pair)) {
         doWithRecord.accept(pair);
+        processedRecords++;
       }
       it.next();
     }

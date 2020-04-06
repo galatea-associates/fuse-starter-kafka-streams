@@ -16,6 +16,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -105,7 +106,66 @@ public class StatusController {
   private String describeConsumerGroup(String name, boolean detail)
       throws ExecutionException, InterruptedException {
 
-    List<List<String>> table = new ArrayList<>();
+    Map<TopicPartition, OffsetMap> partitionOffsets = consumerGroupMonitor
+        .getPartitionOffsets(name);
+
+    if (detail) {
+      return detailedGroupTable(partitionOffsets);
+    } else {
+      return summarizedGroupTable(partitionOffsets);
+    }
+  }
+
+  private String summarizedGroupTable(Map<TopicPartition, OffsetMap> partitionOffsets) {
+    List<Entry<String, OffsetMap>> sortedTopicOffsets = consumerGroupMonitor
+        .sumOffsetsByTopic(partitionOffsets).entrySet().stream().sorted(Entry.comparingByKey())
+        .collect(Collectors.toList());
+
+    AtomicLong totalConsumeRate = new AtomicLong(0);
+    List<List<String>> table = new LinkedList<>();
+    table.add(groupTableHeader(false));
+
+    // determine which topics don't have commits for every partition
+    Set<String> topicsMissingPartitionCommit = new HashSet<>();
+    partitionOffsets.forEach((topicPart, offsetMap) -> {
+      if (!offsetMap.containsKey(COMMIT_OFFSET)) {
+        topicsMissingPartitionCommit.add(topicPart.topic());
+      }
+    });
+    AtomicBoolean lagAsteriskExist = new AtomicBoolean(false);
+    sortedTopicOffsets.forEach(entry -> {
+      String lagAsterisk =
+          topicsMissingPartitionCommit.contains(entry.getKey()) ? "*" : Strings.EMPTY;
+      lagAsteriskExist.compareAndSet(false, !lagAsterisk.isEmpty());
+
+      String consumeRateString = "";
+      Long consumeRate = entry.getValue().get(COMMIT_OFFSET_DELTA_PER_SECOND);
+      if (consumeRate != null && lagAsterisk.isEmpty()) {
+        consumeRateString = numberFormat.format(consumeRate);
+        totalConsumeRate.addAndGet(consumeRate);
+      }
+
+      OffsetMap offsetMap = entry.getValue();
+      table.add(Arrays.asList(entry.getKey(), String.valueOf(offsetMap.get(COMMIT_OFFSET)),
+          String.valueOf(offsetMap.get(END_OFFSET)),
+          (offsetMap.get(END_OFFSET) - offsetMap.get(COMMIT_OFFSET)) + lagAsterisk,
+          consumeRateString));
+    });
+
+    StringBuilder output = new StringBuilder();
+
+    output.append(printableTable(table));
+    if (lagAsteriskExist.get()) {
+      output.append("* Lag may be higher due to the presence of un-committed partitions, "
+          + "un-committed partitions did not contribute to end-offset or lag. ");
+    }
+    output.append("Total consumption rate: ").append(numberFormat.format(totalConsumeRate.get()))
+        .append(" per second");
+
+    return output.toString();
+  }
+
+  private List<String> groupTableHeader(boolean detail) {
     List<String> header = new ArrayList<>();
     header.add("Topic");
     if (detail) {
@@ -115,86 +175,43 @@ public class StatusController {
     header.add("EndOffset");
     header.add("Lag");
     header.add("Consume Rate");
-    table.add(header);
+    return header;
+  }
 
-    Map<TopicPartition, OffsetMap> partitionOffsets = consumerGroupMonitor
-        .getPartitionOffsets(name);
+  private String detailedGroupTable(Map<TopicPartition, OffsetMap> partitionOffsets) {
+    List<List<String>> table = new LinkedList<>();
+    table.add(groupTableHeader(true));
+
     AtomicLong totalConsumeRate = new AtomicLong(0);
+    partitionOffsets.entrySet().stream().sorted((o1, o2) -> {
+      if (o1.getKey().topic().equals(o2.getKey().topic())) {
+        return Integer.compare(o1.getKey().partition(), o2.getKey().partition());
+      }
+      return o1.getKey().topic().compareTo(o2.getKey().topic());
+    }).forEach(entry -> {
+      OffsetMap offsetMap = entry.getValue();
+      String lag = "-";
+      String commitOffsetString = "-";
 
-    AtomicBoolean lagAsteriskExist = new AtomicBoolean(false);
-    if (detail) {
-      List<Entry<TopicPartition, OffsetMap>> sortedPartitionOffsets = partitionOffsets
-          .entrySet().stream().sorted((o1, o2) -> {
-            if (o1.getKey().topic().equals(o2.getKey().topic())) {
-              return Integer.compare(o1.getKey().partition(), o2.getKey().partition());
-            }
-            return o1.getKey().topic().compareTo(o2.getKey().topic());
-          }).collect(Collectors.toList());
+      if (offsetMap.containsKey(COMMIT_OFFSET)) {
+        lag = String.valueOf(offsetMap.get(END_OFFSET) - offsetMap.get(COMMIT_OFFSET));
+        commitOffsetString = String.valueOf(offsetMap.get(COMMIT_OFFSET));
+      }
 
-      sortedPartitionOffsets.forEach(entry -> {
-        OffsetMap offsetMap = entry.getValue();
-        String lag = "-";
-        String commitOffsetString = "-";
+      Long consumeRate = offsetMap.get(COMMIT_OFFSET_DELTA_PER_SECOND);
+      String consumeRateString = "";
+      if (consumeRate != null) {
+        consumeRateString = consumeRate.toString();
+        totalConsumeRate.addAndGet(consumeRate);
+      }
 
-        if (offsetMap.containsKey(COMMIT_OFFSET)) {
-          lag = String.valueOf(offsetMap.get(END_OFFSET) - offsetMap.get(COMMIT_OFFSET));
-          commitOffsetString = String.valueOf(offsetMap.get(COMMIT_OFFSET));
-        }
+      table.add(Arrays.asList(entry.getKey().topic(), String.valueOf(entry.getKey().partition()),
+          commitOffsetString, String.valueOf(offsetMap.get(END_OFFSET)), lag, consumeRateString));
+    });
 
-        Long consumeRate = offsetMap.get(COMMIT_OFFSET_DELTA_PER_SECOND);
-        String consumeRateString = "";
-        if (consumeRate != null) {
-          consumeRateString = consumeRate.toString();
-          totalConsumeRate.addAndGet(consumeRate);
-        }
-
-        table.add(Arrays.asList(entry.getKey().topic(), String.valueOf(entry.getKey().partition()),
-            commitOffsetString, String.valueOf(offsetMap.get(END_OFFSET)), lag, consumeRateString));
-      });
-    } else {
-      List<Entry<String, OffsetMap>> sortedTopicOffsets = consumerGroupMonitor
-          .sumOffsetsByTopic(partitionOffsets).entrySet().stream().sorted(Entry.comparingByKey())
-          .collect(Collectors.toList());
-
-      // determine which topics don't have commits for every partition
-      Set<String> topicsMissingPartitionCommit = new HashSet<>();
-      partitionOffsets.forEach((topicPart, offsetMap) -> {
-        if (!offsetMap.containsKey(COMMIT_OFFSET)) {
-          topicsMissingPartitionCommit.add(topicPart.topic());
-        }
-      });
-
-      sortedTopicOffsets.forEach(entry -> {
-        String lagAsterisk =
-            topicsMissingPartitionCommit.contains(entry.getKey()) ? "*" : Strings.EMPTY;
-        lagAsteriskExist.compareAndSet(false, !lagAsterisk.isEmpty());
-
-        String consumeRateString = "";
-        Long consumeRate = entry.getValue().get(COMMIT_OFFSET_DELTA_PER_SECOND);
-        if (consumeRate != null && lagAsterisk.isEmpty()) {
-          consumeRateString = numberFormat.format(consumeRate);
-          totalConsumeRate.addAndGet(consumeRate);
-        }
-
-        OffsetMap offsetMap = entry.getValue();
-        table.add(Arrays.asList(entry.getKey(), String.valueOf(offsetMap.get(COMMIT_OFFSET)),
-            String.valueOf(offsetMap.get(END_OFFSET)),
-            (offsetMap.get(END_OFFSET) - offsetMap.get(COMMIT_OFFSET)) + lagAsterisk,
-            consumeRateString));
-      });
-    }
-
-    StringBuilder output = new StringBuilder();
-
-    output.append(printableTable(table));
-    if (lagAsteriskExist.get()) {
-      output.append("* Lag may be higher due to the presence of un-committed partitions, "
-          + "un-committed partitions did not contribute to end-offset or lag. "
-          + "Total consumption rate not available.");
-    } else {
-      output.append("Total consumption rate: ").append(numberFormat.format(totalConsumeRate.get()));
-    }
-    return output.toString();
+    return printableTable(table)
+        + "Total consumption rate: " + numberFormat.format(totalConsumeRate.get())
+        + " per second";
   }
 
   private String describeSchema(String name, String[] parameters)

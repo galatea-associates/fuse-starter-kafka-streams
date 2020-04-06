@@ -95,7 +95,7 @@ public class RecordStoreController {
       }
       Pair<String, RocksDB> rocksDB = rocksDbController.newStore(tableName);
       ConsumerRecordTable table = new ConsumerRecordTable(tableName, keySerde, this.valueSerde,
-          rocksDB.getValue(), rocksDB.getKey(), recordFilter);
+          rocksDB.getValue(), rocksDB.getKey(), recordFilter, compact);
       tables.put(tableName, new TableDetails(table));
       return table;
 

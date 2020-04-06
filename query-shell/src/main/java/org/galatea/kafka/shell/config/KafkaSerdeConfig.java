@@ -57,11 +57,11 @@ public class KafkaSerdeConfig {
     Map<SerdeType, ToStringDeserializer> serdeMap = new HashMap<>();
     serdeMap.put(new SerdeType(true, DataType.AVRO), (metadata, bytes) -> {
       GenericRecord genericRecord = deserializeAvro(avroKeySerde, metadata, bytes);
-      return genericRecord == null ? "null" : genericRecord.toString();
+      return genericRecord == null ? null : genericRecord.toString();
     });
     serdeMap.put(new SerdeType(false, DataType.AVRO), (metadata, bytes) -> {
       GenericRecord genericRecord = deserializeAvro(avroValueSerde, metadata, bytes);
-      return genericRecord.toString();
+      return genericRecord == null ? null : genericRecord.toString();
     });
 
     addPrimitiveSerde(serdeMap, DataType.LONG, LONG_SERDE);
