@@ -119,19 +119,23 @@ public class KafkaSerdeConfig {
         Object fieldValue = record.get(field.pos());
         LogicalType logicalType = field.schema().getLogicalType();
 
-        if (logicalType.equals(LogicalTypes.timestampMillis())) {
-          record.put(field.pos(), Instant.ofEpochMilli((long) fieldValue));
-        } else if (logicalType.equals(LogicalTypes.timestampMicros())) {
-          record.put(field.pos(), Instant.EPOCH.plus((long) fieldValue, ChronoUnit.MICROS));
-        } else if (logicalType.equals(LogicalTypes.timeMillis())) {
-          record.put(field.pos(), LocalTime.ofNanoOfDay((int) fieldValue * 1000000));
-        } else if (logicalType.equals(LogicalTypes.timeMicros())) {
-          record.put(field.pos(), LocalTime.ofNanoOfDay((long) fieldValue * 1000));
-        } else if (logicalType.equals(LogicalTypes.date())) {
-          record.put(field.pos(), LocalDate.ofEpochDay((int) fieldValue));
-        } else {
-          throw new IllegalArgumentException(
-              String.format("Unconfigured logical type %s", logicalType.toString()));
+        try {
+          if (logicalType.equals(LogicalTypes.timestampMillis())) {
+            record.put(field.pos(), Instant.ofEpochMilli((long) fieldValue));
+          } else if (logicalType.equals(LogicalTypes.timestampMicros())) {
+            record.put(field.pos(), Instant.EPOCH.plus((long) fieldValue, ChronoUnit.MICROS));
+          } else if (logicalType.equals(LogicalTypes.timeMillis())) {
+            record.put(field.pos(), LocalTime.ofNanoOfDay((int) fieldValue * 1000000));
+          } else if (logicalType.equals(LogicalTypes.timeMicros())) {
+            record.put(field.pos(), LocalTime.ofNanoOfDay((long) fieldValue * 1000));
+          } else if (logicalType.equals(LogicalTypes.date())) {
+            record.put(field.pos(), LocalDate.ofEpochDay((int) fieldValue));
+          } else {
+            throw new IllegalArgumentException(
+                String.format("Unconfigured logical type %s", logicalType.toString()));
+          }
+        } catch (Exception e ) {
+          log.error("Could not make logical type readable: {}.", field.name(), e);
         }
       }
     }
