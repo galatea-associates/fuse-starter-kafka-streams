@@ -6,7 +6,6 @@ import java.util.HashMap;
 import java.util.Map;
 import org.apache.avro.specific.SpecificRecord;
 import org.apache.kafka.common.serialization.Serde;
-import org.galatea.kafka.starter.messaging.StreamProperties;
 import org.galatea.kafka.starter.messaging.Topic;
 import org.galatea.kafka.starter.messaging.security.SecurityIsinMsgKey;
 import org.galatea.kafka.starter.messaging.security.SecurityMsgValue;
@@ -15,7 +14,6 @@ import org.galatea.kafka.starter.messaging.trade.TradeMsgValue;
 import org.galatea.kafka.starter.messaging.trade.input.InputTradeMsgKey;
 import org.galatea.kafka.starter.messaging.trade.input.InputTradeMsgValue;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -55,11 +53,5 @@ public class MessagingConfig {
     serde.configure(configMap, forKey);
 
     return serde;
-  }
-
-  @Bean
-  @ConfigurationProperties(prefix = "messaging")
-  StreamProperties streamProperties() {
-    return new StreamProperties();
   }
 }
