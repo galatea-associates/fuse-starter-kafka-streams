@@ -57,7 +57,9 @@ public class StreamController extends BaseStreamingService {
     outputTradeStream.peek(this::logProduce)
         .to(normalizedTradeTopic.getName(), producedWith(normalizedTradeTopic));
 
-    return builder.build();
+    Topology topology = builder.build();
+    log.info("\n{}", topology.describe());
+    return topology;
   }
 
   private <K, V> Consumed<K, V> consumedWith(Topic<K, V> topic) {
