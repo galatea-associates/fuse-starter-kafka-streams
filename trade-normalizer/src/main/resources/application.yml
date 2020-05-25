@@ -1,9 +1,10 @@
+kafka-streams:
+  application.id: normalizer
+  bootstrap.servers: localhost:9092
+  state.dir: ./target/stream_state_test
+
 messaging:
   schema-registry-url: http://localhost:8080
-  streams:
-    application.id: normalizer
-    bootstrap.servers: localhost:9092
-    state.dir: ./target/stream_state_test
   topic:
     # Categorized by how the topic will be used by streams. If a topic is both Output and Input,
     # it will be categorized as "input". Further, streams do not support consuming a topic as global

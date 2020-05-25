@@ -7,6 +7,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.specific.SpecificRecord;
 import org.galatea.kafka.starter.TestConfig;
+import org.galatea.kafka.starter.messaging.KafkaStreamsStarter;
 import org.galatea.kafka.starter.messaging.StreamProperties;
 import org.galatea.kafka.starter.messaging.Topic;
 import org.galatea.kafka.starter.messaging.security.SecurityIsinMsgKey;
@@ -22,6 +23,7 @@ import org.junit.runner.RunWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringRunner;
 
@@ -32,6 +34,8 @@ import org.springframework.test.context.junit4.SpringRunner;
 @EnableAutoConfiguration
 public class StreamControllerTest {
 
+  @MockBean
+  private KafkaStreamsStarter streamsStarter;
   @Autowired
   private StreamController controller;
   @Autowired
