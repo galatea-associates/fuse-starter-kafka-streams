@@ -69,8 +69,6 @@ public class StreamControllerTest {
   @SneakyThrows
   public void testInput() {
 
-    Runtime.getRuntime().traceMethodCalls(true);
-    Runtime.getRuntime().traceInstructions(true);
     Map<String, String> securityRecordMap = new HashMap<>();
     securityRecordMap.put("isin", "isin1");
     securityRecordMap.put("securityId", "secId");
