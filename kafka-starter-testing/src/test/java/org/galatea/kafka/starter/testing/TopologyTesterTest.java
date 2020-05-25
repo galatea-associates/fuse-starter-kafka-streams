@@ -25,7 +25,7 @@ import org.galatea.kafka.starter.messaging.Topic;
 import org.galatea.kafka.starter.messaging.test.TestMsgKey;
 import org.galatea.kafka.starter.messaging.test.TestMsgValue;
 import org.galatea.kafka.starter.messaging.test.TestSubMsg;
-import org.galatea.kafka.starter.testing.conversion.ConversionUtil;
+import org.galatea.kafka.starter.testing.conversion.ConversionService;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -87,10 +87,10 @@ public class TopologyTesterTest {
     tester.registerBeanClass(TestMsgValue.class);
 
     Pattern relativeTDatePattern = Pattern.compile("^\\s*[Tt]\\s*(([+-])\\s*(\\d+)\\s*)?$");
-    ConversionUtil typeConversionUtil = tester.getTypeConversionUtil();
-    typeConversionUtil.registerTypeConversion(LocalDate.class, Pattern.compile("^\\d+$"),
+    ConversionService typeConversionService = tester.getTypeConversionService();
+    typeConversionService.registerTypeConversion(LocalDate.class, Pattern.compile("^\\d+$"),
         (stringValue, matcher) -> LocalDate.ofEpochDay(Long.parseLong(stringValue)));
-    typeConversionUtil.registerTypeConversion(LocalDate.class, relativeTDatePattern,
+    typeConversionService.registerTypeConversion(LocalDate.class, relativeTDatePattern,
         (tDateString, matcher) -> {
           if (matcher.group(1) != null) {
             String plusMinus = matcher.group(2);

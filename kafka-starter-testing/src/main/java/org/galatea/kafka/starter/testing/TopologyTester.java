@@ -41,7 +41,7 @@ import org.galatea.kafka.starter.messaging.Topic;
 import org.galatea.kafka.starter.testing.alias.AliasHelper;
 import org.galatea.kafka.starter.testing.avro.AvroMessageUtil;
 import org.galatea.kafka.starter.testing.bean.RecordBeanHelper;
-import org.galatea.kafka.starter.testing.conversion.ConversionUtil;
+import org.galatea.kafka.starter.testing.conversion.ConversionService;
 import org.springframework.util.FileSystemUtils;
 import org.unitils.reflectionassert.ReflectionComparatorMode;
 
@@ -57,7 +57,7 @@ public class TopologyTester implements Closeable {
   private final Set<Class<?>> avroClasses = new HashSet<>();
 
   @Getter
-  private final ConversionUtil typeConversionUtil = new ConversionUtil();
+  private final ConversionService typeConversionService = new ConversionService();
   @Getter
   private final AvroMessageUtil avroMessageUtil = AvroMessageUtil.defaultUtil();
 
@@ -326,7 +326,7 @@ public class TopologyTester implements Closeable {
     boolean valueIsBean = valueIsBean(topicConfig);
 
     KeyValue<K, V> record = RecordBeanHelper
-        .createRecord(typeConversionUtil, expectedEntryMap, topicConfig, keyIsBean, valueIsBean);
+        .createRecord(typeConversionService, expectedEntryMap, topicConfig, keyIsBean, valueIsBean);
     if (keyIsAvro(topicConfig)) {
       avroMessageUtil.populateRequiredFieldsWithDefaults((SpecificRecord) record.key);
     }

@@ -14,13 +14,13 @@ import java.util.regex.Pattern;
 import org.junit.Before;
 import org.junit.Test;
 
-public class ConversionUtilTest {
+public class ConversionServiceTest {
 
-  private ConversionUtil conversionUtil;
+  private ConversionService conversionService;
 
   @Before
   public void setup() {
-    conversionUtil = new ConversionUtil();
+    conversionService = new ConversionService();
   }
 
   @Test
@@ -31,7 +31,7 @@ public class ConversionUtilTest {
     Map<String, Function<String, Object>> conversionMap = new HashMap<>();
     conversionMap.put(fieldPath, string -> string.toUpperCase() + string.toLowerCase());
 
-    Object converted = ConversionUtil.convertFieldValue(fieldPath, fieldValue, conversionMap);
+    Object converted = ConversionService.convertFieldValue(fieldPath, fieldValue, conversionMap);
 
     assertEquals(expected, converted);
   }
@@ -42,7 +42,7 @@ public class ConversionUtilTest {
     String fieldValue = "v";
     Map<String, Function<String, Object>> conversionMap = new HashMap<>();
 
-    ConversionUtil.convertFieldValue(fieldPath, fieldValue, conversionMap);
+    ConversionService.convertFieldValue(fieldPath, fieldValue, conversionMap);
     fail();
   }
 
@@ -52,21 +52,21 @@ public class ConversionUtilTest {
     Map<String, Function<String, Object>> conversionMap = new HashMap<>();
     conversionMap.put(fieldPath, string -> string.toUpperCase() + string.toLowerCase());
 
-    assertTrue(ConversionUtil.hasFieldConversionMethod(fieldPath, conversionMap));
+    assertTrue(ConversionService.hasFieldConversionMethod(fieldPath, conversionMap));
   }
 
   @Test
   public void hasFieldConversionMethod_False() {
     String fieldPath = "fieldName";
 
-    assertFalse(ConversionUtil.hasFieldConversionMethod(fieldPath, Collections.emptyMap()));
+    assertFalse(ConversionService.hasFieldConversionMethod(fieldPath, Collections.emptyMap()));
   }
 
   @Test
   public void useExistingTypeConversion() {
-    conversionUtil.registerTypeConversion(LocalDate.class, Pattern.compile("^\\d+$"),
+    conversionService.registerTypeConversion(LocalDate.class, Pattern.compile("^\\d+$"),
         (s, m) -> LocalDate.ofEpochDay(Long.parseLong(s)));
-    Object convertedDate = conversionUtil.maybeUseTypeConversion(LocalDate.class, "1");
+    Object convertedDate = conversionService.maybeUseTypeConversion(LocalDate.class, "1");
 
     assertEquals(LocalDate.ofEpochDay(1), convertedDate);
   }
@@ -74,9 +74,9 @@ public class ConversionUtilTest {
   @Test
   public void useExistingTypeConversion_NoMatchPattern() {
     String converterInput = "1 1";
-    conversionUtil.registerTypeConversion(LocalDate.class, Pattern.compile("^\\d+$"),
+    conversionService.registerTypeConversion(LocalDate.class, Pattern.compile("^\\d+$"),
         (s, m) -> LocalDate.ofEpochDay(Long.parseLong(s)));
-    Object convertedDate = conversionUtil.maybeUseTypeConversion(LocalDate.class, converterInput);
+    Object convertedDate = conversionService.maybeUseTypeConversion(LocalDate.class, converterInput);
 
     assertEquals(converterInput, convertedDate);
   }
@@ -84,7 +84,7 @@ public class ConversionUtilTest {
   @Test
   public void useMissingTypeConversion() {
     String converterInput = "1";
-    Object convertedDate = conversionUtil.maybeUseTypeConversion(LocalDate.class, converterInput);
+    Object convertedDate = conversionService.maybeUseTypeConversion(LocalDate.class, converterInput);
 
     assertEquals(converterInput, convertedDate);
   }
