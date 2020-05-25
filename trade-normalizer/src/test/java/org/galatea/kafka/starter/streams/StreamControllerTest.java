@@ -7,8 +7,8 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.specific.SpecificRecord;
 import org.galatea.kafka.starter.TestConfig;
+import org.galatea.kafka.starter.messaging.KafkaStreamsConfig;
 import org.galatea.kafka.starter.messaging.KafkaStreamsStarter;
-import org.galatea.kafka.starter.messaging.StreamProperties;
 import org.galatea.kafka.starter.messaging.Topic;
 import org.galatea.kafka.starter.messaging.security.SecurityIsinMsgKey;
 import org.galatea.kafka.starter.messaging.security.SecurityMsgValue;
@@ -39,7 +39,7 @@ public class StreamControllerTest {
   @Autowired
   private StreamController controller;
   @Autowired
-  private StreamProperties properties;
+  private KafkaStreamsConfig properties;
   @Autowired
   private Topic<InputTradeMsgKey, InputTradeMsgValue> inputTradeTopic;
   @Autowired
@@ -69,6 +69,8 @@ public class StreamControllerTest {
   @SneakyThrows
   public void testInput() {
 
+    Runtime.getRuntime().traceMethodCalls(true);
+    Runtime.getRuntime().traceInstructions(true);
     Map<String, String> securityRecordMap = new HashMap<>();
     securityRecordMap.put("isin", "isin1");
     securityRecordMap.put("securityId", "secId");

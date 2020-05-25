@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 @ConfigurationProperties
-public class StreamProperties {
+public class KafkaStreamsConfig {
 
   @Getter
   private final Map<String, String> kafkaStreams = new HashMap<>();

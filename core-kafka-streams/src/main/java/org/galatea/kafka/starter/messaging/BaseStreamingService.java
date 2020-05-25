@@ -10,11 +10,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
 
 @Slf4j
-@Import({StreamProperties.class, KafkaStreamsStarter.class})
+@Import({KafkaStreamsConfig.class, KafkaStreamsStarter.class})
 public abstract class BaseStreamingService implements Service {
 
   @Autowired
-  private StreamProperties streamProperties;
+  private KafkaStreamsConfig kafkaStreamsConfig;
 
   protected abstract Topology buildTopology();
 
@@ -23,7 +23,7 @@ public abstract class BaseStreamingService implements Service {
 
   @Override
   final public void start() {
-    streams = new KafkaStreams(buildTopology(), streamProperties.asProperties());
+    streams = new KafkaStreams(buildTopology(), kafkaStreamsConfig.asProperties());
     onStreamCreation(streams);
     streams.start();
   }
