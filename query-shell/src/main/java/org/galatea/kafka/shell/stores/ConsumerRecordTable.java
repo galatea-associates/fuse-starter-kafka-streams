@@ -38,9 +38,11 @@ public class ConsumerRecordTable extends RecordTable<DbRecordKey, DbRecord> {
 
     if (compact) {
       counter = (existingValue, newValue) -> {
-        if (existingValue.getStringValue() == null && newValue.getStringValue() != null) {
+        if ((existingValue == null || existingValue.getStringValue() == null)
+            && newValue.getStringValue() != null) {
           recordsInStore.incrementAndGet();
-        } else if (existingValue.getStringValue() != null && newValue.getStringValue() == null) {
+        } else if (existingValue != null && existingValue.getStringValue() != null
+            && newValue.getStringValue() == null) {
           recordsInStore.decrementAndGet();
         }
       };
