@@ -23,6 +23,7 @@ import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.function.Function;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.specific.SpecificRecord;
@@ -171,16 +172,30 @@ public class TopologyTester implements Closeable {
 
   public <K, V> void pipeInput(Topic<K, V> topic, List<Map<String, String>> records)
       throws Exception {
+    pipeInput(topic, records, null);
+  }
+
+  public <K, V> void pipeInput(Topic<K, V> topic, List<Map<String, String>> records,
+      Function<KeyValue<K, V>, KeyValue<K, V>> recordCreationCallback)
+      throws Exception {
     for (Map<String, String> record : records) {
-      pipeInput(topic, record);
+      pipeInput(topic, record, recordCreationCallback);
     }
   }
 
   public <K, V> void pipeInput(Topic<K, V> topic, Map<String, String> fieldMap) throws Exception {
+    pipeInput(topic, fieldMap, null);
+  }
+
+  public <K, V> void pipeInput(Topic<K, V> topic, Map<String, String> fieldMap,
+      Function<KeyValue<K, V>, KeyValue<K, V>> recordCreationCallback) throws Exception {
     TopicConfig<K, V> topicConfig = inputTopicConfig(topic);
 
     KeyValue<K, V> record = createRecordWithAvroUtil(fieldMap, topicConfig);
 
+    if (recordCreationCallback != null) {
+      record = recordCreationCallback.apply(record);
+    }
     log.info("{} Piping record into topology on topic {}: {}", TopologyTester.class.getSimpleName(),
         topic.getName(), record);
     driver.pipeInput(topicConfig.factory().create(Collections.singletonList(record)));
