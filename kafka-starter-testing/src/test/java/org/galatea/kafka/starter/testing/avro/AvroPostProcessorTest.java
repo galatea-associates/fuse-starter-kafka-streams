@@ -27,9 +27,9 @@ import org.junit.Before;
 import org.junit.Test;
 
 @Slf4j
-public class AvroMessageUtilTest {
+public class AvroPostProcessorTest {
 
-  private AvroMessageUtil util;
+  private AvroPostProcessor util;
 
   private static final Schema TEST_SCHEMA = new Schema.Parser().parse("{\"type\":\"record\","
       + "\"name\":\"TestMsg2\",\"namespace\":\"org.galatea.kafka.starter.messaging.test\",\"fields\":["
@@ -47,7 +47,7 @@ public class AvroMessageUtilTest {
 
   @Before
   public void setup() {
-    util = new AvroMessageUtil();
+    util = new AvroPostProcessor();
     record = mock(SpecificRecord.class);
     recordValues = new HashMap<>();
     doReturn(TEST_SCHEMA).when(record).getSchema();
@@ -68,7 +68,7 @@ public class AvroMessageUtilTest {
     util.registerType(Type.ENUM, new AvroEnumType());
 
     // when
-    util.populateRequiredFieldsWithDefaults(record);
+    util.process(record);
 
     // then
     Field field = TEST_SCHEMA.getField("doubleField");
@@ -86,7 +86,7 @@ public class AvroMessageUtilTest {
     util.registerType(Type.ENUM, new AvroEnumType());
 
     // when
-    util.populateRequiredFieldsWithDefaults(record);
+    util.process(record);
 
     // then
     Field field = TEST_SCHEMA.getField("dateField");
@@ -104,7 +104,7 @@ public class AvroMessageUtilTest {
     util.registerType(Type.ENUM, new AvroEnumType());
 
     // when
-    util.populateRequiredFieldsWithDefaults(record);
+    util.process(record);
 
     // then
     Field field = TEST_SCHEMA.getField("defaultValField");
@@ -122,7 +122,7 @@ public class AvroMessageUtilTest {
     util.registerType(Type.ENUM, new AvroEnumType());
 
     // when
-    util.populateRequiredFieldsWithDefaults(record);
+    util.process(record);
 
     // then
     Field field = TEST_SCHEMA.getField("nullableField");
@@ -136,7 +136,7 @@ public class AvroMessageUtilTest {
     // do not register types
 
     // when
-    util.populateRequiredFieldsWithDefaults(record);
+    util.process(record);
 
     // should have thrown exception before this
     fail();
@@ -153,7 +153,7 @@ public class AvroMessageUtilTest {
     util.registerType(Type.ENUM, new AvroEnumType());
 
     // when
-    util.populateRequiredFieldsWithDefaults(record);
+    util.process(record);
 
     Field field = TEST_SCHEMA.getField("nonNullableEnum");
     assertEquals(field.schema().getEnumSymbols().get(0), recordValues.get(field.pos()).toString());

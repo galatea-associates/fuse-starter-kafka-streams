@@ -20,13 +20,13 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.function.Function;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.avro.specific.SpecificRecord;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.streams.KafkaStreams;
@@ -40,7 +40,7 @@ import org.apache.kafka.streams.state.KeyValueStore;
 import org.apache.kafka.streams.state.QueryableStoreType;
 import org.galatea.kafka.starter.messaging.Topic;
 import org.galatea.kafka.starter.testing.alias.AliasHelper;
-import org.galatea.kafka.starter.testing.avro.AvroMessageUtil;
+import org.galatea.kafka.starter.testing.avro.RecordPostProcessor;
 import org.galatea.kafka.starter.testing.bean.RecordBeanHelper;
 import org.galatea.kafka.starter.testing.conversion.ConversionUtil;
 import org.springframework.util.FileSystemUtils;
@@ -55,12 +55,10 @@ public class TopologyTester implements Closeable {
   private final Map<String, TopicConfig<?, ?>> outputTopicConfig = new HashMap<>();
   private final Map<String, TopicConfig<?, ?>> storeConfig = new HashMap<>();
   private final Set<Class<?>> beanClasses = new HashSet<>();
-  private final Set<Class<?>> avroClasses = new HashSet<>();
 
   @Getter
   private final ConversionUtil typeConversionUtil = new ConversionUtil();
-  @Getter
-  private final AvroMessageUtil avroMessageUtil = AvroMessageUtil.defaultUtil();
+  private final Map<Class<?>, RecordPostProcessor<?>> postProcessors = new HashMap<>();
 
   /**
    * Use this KafkaStreams object for calling any code that needs to retrieve stores from the
@@ -71,6 +69,10 @@ public class TopologyTester implements Closeable {
     when(mockStreams.store(any(String.class), any(QueryableStoreType.class)))
         .thenAnswer(invocationOnMock -> driver.getKeyValueStore(invocationOnMock.getArgument(0)));
     return mockStreams;
+  }
+
+  public <T> void registerPostProcessor(Class<T> forClass, RecordPostProcessor<T> processor) {
+    postProcessors.put(forClass, processor);
   }
 
   public TopologyTester(Topology topology, Properties streamProperties) {
@@ -92,14 +94,6 @@ public class TopologyTester implements Closeable {
    */
   public void registerBeanClass(Class<?> beanClassOrInterface) {
     beanClasses.add(beanClassOrInterface);
-  }
-
-  /**
-   * Register class/interface to be treated as an avro class. These classes should also be
-   * registered as beans for correct operation
-   */
-  public void registerAvroClass(Class<?> avroClassOrInterface) {
-    avroClasses.add(avroClassOrInterface);
   }
 
   public void beforeTest() {
@@ -191,7 +185,7 @@ public class TopologyTester implements Closeable {
       Function<KeyValue<K, V>, KeyValue<K, V>> recordCreationCallback) throws Exception {
     TopicConfig<K, V> topicConfig = inputTopicConfig(topic);
 
-    KeyValue<K, V> record = createRecordWithAvroUtil(fieldMap, topicConfig);
+    KeyValue<K, V> record = createRecordWithProcessing(fieldMap, topicConfig);
 
     if (recordCreationCallback != null) {
       record = recordCreationCallback.apply(record);
@@ -199,18 +193,6 @@ public class TopologyTester implements Closeable {
     log.info("{} Piping record into topology on topic {}: {}", TopologyTester.class.getSimpleName(),
         topic.getName(), record);
     driver.pipeInput(topicConfig.factory().create(Collections.singletonList(record)));
-  }
-
-  private <V, K> boolean valueIsAvro(TopicConfig<K, V> topicConfig) throws Exception {
-    Class<?> objClass = topicConfig.createValue().getClass();
-    return avroClasses.contains(objClass) || collectionContainsAny(avroClasses,
-        Arrays.asList(objClass.getInterfaces()));
-  }
-
-  private <V, K> boolean keyIsAvro(TopicConfig<K, V> topicConfig) throws Exception {
-    Class<?> objClass = topicConfig.createKey().getClass();
-    return avroClasses.contains(objClass) || collectionContainsAny(avroClasses,
-        Arrays.asList(objClass.getInterfaces()));
   }
 
   private <V, K> boolean keyIsBean(TopicConfig<K, V> topicConfig) throws Exception {
@@ -266,7 +248,7 @@ public class TopologyTester implements Closeable {
             expectedRecordMap.keySet()));
       }
 
-      expectedOutput.add(createRecordWithAvroUtil(expectedRecordMap, topicConfig));
+      expectedOutput.add(createRecordWithProcessing(expectedRecordMap, topicConfig));
     }
 
     assertListEquals(expectedOutput, comparableActualOutput, lenientOrder);
@@ -296,7 +278,7 @@ public class TopologyTester implements Closeable {
                 + "have the same expected fields. \n\tExpected fields: %s\n\tActual Fields: %s",
             expectedFields.toString(), expectedEntryMap.toString()));
       }
-      KeyValue<Object, Object> expectedRecord = createRecordWithAvroUtil(expectedEntryMap,
+      KeyValue<Object, Object> expectedRecord = createRecordWithProcessing(expectedEntryMap,
           storeConfig);
       assertTrue(String.format("Store does not contain record with values: %s",
           expectedEntryMap.toString()), storeContentsStripped.contains(expectedRecord));
@@ -327,7 +309,7 @@ public class TopologyTester implements Closeable {
                 + "have the same expected fields. \n\tExpected fields: %s\n\tActual Fields: %s",
             expectedFields.toString(), expectedEntryMap.toString()));
       }
-      KeyValue<Object, Object> unexpectedRecord = createRecordWithAvroUtil(expectedEntryMap,
+      KeyValue<Object, Object> unexpectedRecord = createRecordWithProcessing(expectedEntryMap,
           storeConfig);
       assertFalse(String.format("Store contains record with values: %s:\n\t%s",
           expectedEntryMap.toString(), unexpectedRecord),
@@ -335,21 +317,47 @@ public class TopologyTester implements Closeable {
     }
   }
 
-  private <K, V> KeyValue<K, V> createRecordWithAvroUtil(Map<String, String> expectedEntryMap,
+  // TODO: raw types aliasing, conversions, defaults
+  private <K, V> KeyValue<K, V> createRecordWithProcessing(Map<String, String> expectedEntryMap,
       TopicConfig<K, V> topicConfig) throws Exception {
     boolean keyIsBean = keyIsBean(topicConfig);
     boolean valueIsBean = valueIsBean(topicConfig);
 
     KeyValue<K, V> record = RecordBeanHelper
         .createRecord(typeConversionUtil, expectedEntryMap, topicConfig, keyIsBean, valueIsBean);
-    if (keyIsAvro(topicConfig)) {
-      avroMessageUtil.populateRequiredFieldsWithDefaults((SpecificRecord) record.key);
-    }
-    if (valueIsAvro(topicConfig)) {
-      avroMessageUtil.populateRequiredFieldsWithDefaults((SpecificRecord) record.value);
-    }
 
-    return record;
+    return postProcessRecord(record);
+  }
+
+  private <V, K> KeyValue<K, V> postProcessRecord(KeyValue<K, V> record) throws Exception {
+    K processedKey = null;
+    V processedValue = null;
+    for (Entry<Class<?>, RecordPostProcessor<?>> entry : postProcessors.entrySet()) {
+      Class<?> forClass = entry.getKey();
+      RecordPostProcessor<?> processor = entry.getValue();
+      if (processedKey == null && forClass.isInstance(record.key)) {
+        log.info("Post-processing key {}", record.key);
+        processedKey = useProcessor((RecordPostProcessor<K>) processor, record.key);
+        log.info("Processed key: {}", processedKey);
+      }
+      if (processedValue == null && forClass.isInstance(record.value)) {
+        log.info("Post-processing key {}", record.value);
+        processedValue = useProcessor((RecordPostProcessor<V>) processor, record.value);
+        log.info("Processed value: {}", processedValue);
+      }
+      if (processedKey != null && processedValue != null) {
+        break;
+      }
+    }
+    processedKey = Optional.ofNullable(processedKey).orElse(record.key);
+    processedValue = Optional.ofNullable(processedValue).orElse(record.value);
+
+    return KeyValue.pair(processedKey, processedValue);
+  }
+
+  private <K> K useProcessor(RecordPostProcessor<K> processor, K key)
+      throws Exception {
+    return processor.process(key);
   }
 
   public <K, V> void assertOutputMap(Topic<K, V> topic,
@@ -389,7 +397,7 @@ public class TopologyTester implements Closeable {
             expectedRecordMap.keySet()));
       }
 
-      expectedOutput.add(createRecordWithAvroUtil(expectedRecordMap, topicConfig));
+      expectedOutput.add(createRecordWithProcessing(expectedRecordMap, topicConfig));
     }
 
     assertListEquals(expectedOutput, comparableOutput, true);
@@ -410,19 +418,10 @@ public class TopologyTester implements Closeable {
       Set<String> necessaryFields, TopicConfig<K, V> topicConfig) throws Exception {
     boolean keyIsBean = keyIsBean(topicConfig);
     boolean valueIsBean = valueIsBean(topicConfig);
-    boolean keyIsAvro = keyIsAvro(topicConfig);
-    boolean valueIsAvro = valueIsAvro(topicConfig);
 
     KeyValue<K, V> strippedRecord = RecordBeanHelper
-        .copyRecordPropertiesIntoNew(necessaryFields, record, topicConfig, keyIsBean,
-            valueIsBean);
-    if (keyIsAvro) {
-      avroMessageUtil.populateRequiredFieldsWithDefaults((SpecificRecord) strippedRecord.key);
-    }
-    if (valueIsAvro) {
-      avroMessageUtil.populateRequiredFieldsWithDefaults((SpecificRecord) strippedRecord.value);
-    }
-    return strippedRecord;
+        .copyRecordPropertiesIntoNew(necessaryFields, record, topicConfig, keyIsBean, valueIsBean);
+    return postProcessRecord(strippedRecord);
   }
 
   private void assertListEquals(List<?> expected, List<?> actual,

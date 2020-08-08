@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.SneakyThrows;
+import org.apache.avro.specific.SpecificRecord;
 import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.KeyValue;
@@ -26,6 +27,7 @@ import org.galatea.kafka.starter.messaging.Topic;
 import org.galatea.kafka.starter.messaging.test.TestMsgKey;
 import org.galatea.kafka.starter.messaging.test.TestMsgValue;
 import org.galatea.kafka.starter.messaging.test.TestSubMsg;
+import org.galatea.kafka.starter.testing.avro.AvroPostProcessor;
 import org.galatea.kafka.starter.testing.conversion.ConversionUtil;
 import org.junit.Before;
 import org.junit.Test;
@@ -59,6 +61,12 @@ public class TopologyTesterTest {
   }
 
   private TopologyTester newTester() {
+    TopologyTester tester = newTester(streamProperties(lastTesterId.incrementAndGet()));
+    tester.registerPostProcessor(SpecificRecord.class, AvroPostProcessor.defaultUtil());
+    return tester;
+  }
+
+  private TopologyTester newTesterWithoutAvroRegistered() {
     return newTester(streamProperties(lastTesterId.incrementAndGet()));
   }
 
@@ -82,8 +90,6 @@ public class TopologyTesterTest {
     tester.configureStore(storeName4, inputTopic4.getKeySerde(), inputTopic4.getValueSerde(),
         TestMsgKey::new, TestMsgValue::new);
 
-    tester.registerAvroClass(TestMsgKey.class);
-    tester.registerAvroClass(TestMsgValue.class);
     tester.registerBeanClass(TestMsgKey.class);
     tester.registerBeanClass(TestMsgValue.class);
 
@@ -113,6 +119,7 @@ public class TopologyTesterTest {
           }
           return REF_DATE;
         });
+
     return tester;
   }
 
@@ -277,7 +284,7 @@ public class TopologyTesterTest {
   @Test(expected = SerializationException.class)
   @SneakyThrows
   public void beanClassRegistered_NotAvro() {
-    TopologyTester tester = newTester();
+    TopologyTester tester = newTesterWithoutAvroRegistered();
     tester.registerBeanClass(TestSubMsg.class);
     Map<String, String> inputRecord = new HashMap<>();
     inputRecord.put("nonNullableString", "a");
@@ -290,7 +297,6 @@ public class TopologyTesterTest {
   public void classRegisteredAvroAndBean() {
     TopologyTester tester = newTester();
     tester.registerBeanClass(TestSubMsg.class);
-    tester.registerAvroClass(TestSubMsg.class);
     Map<String, String> inputRecord = new HashMap<>();
     inputRecord.put("nonNullableString", "a");
 
