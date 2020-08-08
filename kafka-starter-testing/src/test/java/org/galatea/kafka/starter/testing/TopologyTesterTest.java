@@ -462,6 +462,24 @@ public class TopologyTesterTest {
     tester.pipeInput(unknownInputTopic, inputRecord);
   }
 
+  @Test
+  @SneakyThrows
+  public void pipeInput_UseRecordCallback() {
+    Map<String, String> inputRecord = new HashMap<>();
+    inputRecord.put("nonNullableStringField", "test");
+
+    Map<String, String> outputRecord = new HashMap<>();
+    outputRecord.put("nonNullableStringField", "test");
+    outputRecord.put("nullableStringField", "test");
+
+    tester.pipeInput(inputTopic4, inputRecord, record -> {
+      record.value.setNullableStringField(record.value.getNonNullableStringField());
+      return record;
+    });
+
+    tester.assertOutputList(outputTopic4, Collections.singletonList(outputRecord), false);
+  }
+
   @Test(expected = IllegalStateException.class)
   @SneakyThrows
   public void assertOutputWithoutConfiguring() {
