@@ -9,7 +9,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.specific.SpecificRecord;
 import org.apache.kafka.streams.Topology;
-import org.galatea.kafka.starter.messaging.StreamProperties;
+import org.galatea.kafka.starter.messaging.KafkaStreamsConfig;
 import org.galatea.kafka.starter.messaging.Topic;
 import org.galatea.kafka.starter.messaging.security.SecurityIsinMsgKey;
 import org.galatea.kafka.starter.messaging.security.SecurityMsgValue;
@@ -36,7 +36,7 @@ public class TradeNormalizerCucumberStep {
   @Autowired
   private StreamController controller;
   @Autowired
-  private StreamProperties properties;
+  private KafkaStreamsConfig properties;
   @Autowired
   private Topic<InputTradeMsgKey, InputTradeMsgValue> inputTradeTopic;
   @Autowired

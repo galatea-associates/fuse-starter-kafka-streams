@@ -27,6 +27,12 @@
       <groupId>org.galatea</groupId>
       <artifactId>core-messaging</artifactId>
     </dependency>
+
+    <dependency>
+      <groupId>org.galatea</groupId>
+      <artifactId>core-kafka-streams</artifactId>
+    </dependency>
+
     <dependency>
       <groupId>org.galatea</groupId>
       <artifactId>core</artifactId>
