@@ -367,6 +367,12 @@ public class RecordBeanHelper {
             .maybeUseTypeConversion(wrappedBean.getPropertyType(fieldPath),
                 value);
       }
+
+      if (valueToApply != null && valueToApply.getClass().equals(String.class) &&
+          ((String) valueToApply).equalsIgnoreCase(NULL_STRING)) {
+        valueToApply = null;
+      }
+
       try {
         wrappedBean.setPropertyValue(fieldPath, valueToApply);
       } catch (TypeMismatchException e) {
