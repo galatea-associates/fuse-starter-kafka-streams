@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.serialization.Serializer;
+import org.galatea.kafka.starter.messaging.serialize.exception.SerializationException;
 import org.galatea.kafka.starter.messaging.serialize.util.StringConversion;
 
 class TupleKeySerializer<T extends TupleKey> implements Serializer<T> {
@@ -21,7 +22,8 @@ class TupleKeySerializer<T extends TupleKey> implements Serializer<T> {
         StringConversion conversion = additionalConverters.get(field.getType());
         return convertIfNecessary(extractedValue, conversion);
       } catch (IllegalAccessException e) {
-        throw new RuntimeException(e);
+        throw new SerializationException(
+            "Could not get property from bean; Field:" + field + "; Bean:" + t, e);
       }
     }).collect(Collectors.toList());
   }
