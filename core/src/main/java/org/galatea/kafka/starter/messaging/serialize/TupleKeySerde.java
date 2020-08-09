@@ -18,6 +18,13 @@ public class TupleKeySerde<T extends TupleKey> implements Serde<T> {
 
   private final TupleKeySerializer<T> serializer;
   private final TupleKeyDeserializer<T> deserializer;
+  private final Map<Class<?>, StringConversion<?>> additionalConverters = new HashMap<>();
+
+  public <U> TupleKeySerde<T> registerFieldConversion(Class<U> classType,
+      StringConversion<U> conversion) {
+    additionalConverters.put(classType, conversion);
+    return this;
+  }
 
   public TupleKeySerde(Class<T> forClass) {
 
@@ -36,22 +43,23 @@ public class TupleKeySerde<T extends TupleKey> implements Serde<T> {
     if (sortedFields.isEmpty()) {
       throw new RuntimeException(String
           .format("Class %s has no fields annotated with %s", forClass.getSimpleName(),
-              TupleField.class.getSimpleName()));
+              TupleKeyField.class.getSimpleName()));
     }
     sortedFields.forEach(f -> f.setAccessible(true));
 
-    serializer = new TupleKeySerializer<>(sortedFields);
-    deserializer = new TupleKeyDeserializer<>(newInstanceCreator, sortedFields);
+    serializer = new TupleKeySerializer<>(sortedFields, additionalConverters);
+    deserializer = new TupleKeyDeserializer<>(newInstanceCreator, sortedFields,
+        additionalConverters);
   }
 
   /**
-   * sort fields based on {@link TupleField} value
+   * sort fields based on {@link TupleKeyField} value
    */
   private List<Field> getSortedTupleFields(Class<T> forClass) {
     Map<Integer, Field> fieldOrderMap = new HashMap<>();
     for (Field field : forClass.getDeclaredFields()) {
-      if (field.isAnnotationPresent(TupleField.class)) {
-        int order = field.getAnnotation(TupleField.class).value();
+      if (field.isAnnotationPresent(TupleKeyField.class)) {
+        int order = field.getAnnotation(TupleKeyField.class).value();
 
         if (fieldOrderMap.put(order, field) != null) {
           throw new RuntimeException(

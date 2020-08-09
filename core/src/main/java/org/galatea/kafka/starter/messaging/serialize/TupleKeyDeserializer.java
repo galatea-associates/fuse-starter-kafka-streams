@@ -3,6 +3,7 @@ package org.galatea.kafka.starter.messaging.serialize;
 import com.apple.foundationdb.tuple.Tuple;
 import java.lang.reflect.Field;
 import java.util.List;
+import java.util.Map;
 import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -14,17 +15,27 @@ class TupleKeyDeserializer<T extends TupleKey> implements Deserializer<T> {
   private final Supplier<T> newInstanceCreator;
   private final List<BiConsumer<T, Object>> setFields;
 
-  TupleKeyDeserializer(Supplier<T> newInstanceCreator, List<Field> sortedFields) {
+  TupleKeyDeserializer(Supplier<T> newInstanceCreator, List<Field> sortedFields,
+      Map<Class<?>, StringConversion<?>> additionalConverters) {
     this.newInstanceCreator = newInstanceCreator;
 
     setFields = sortedFields.stream().map(field -> (BiConsumer<T, Object>) (t, o) -> {
       try {
-        field.set(t, o);
+        StringConversion<?> conversion = additionalConverters.get(field.getType());
+        Object converted = useConverterIfNecessary(o, conversion);
+        field.set(t, converted);
       } catch (IllegalAccessException e) {
         throw new SerializationException("Could not Deserialize object of type " + t.getClass(),
             e);
       }
     }).collect(Collectors.toList());
+  }
+
+  private Object useConverterIfNecessary(Object fieldValue, StringConversion<?> conversion) {
+    if (conversion != null && fieldValue != null) {
+      return conversion.convertFromString().apply((String) fieldValue);
+    }
+    return fieldValue;
   }
 
   @Override
