@@ -8,7 +8,8 @@ public interface StringConversion<T> {
 
   Function<String, T> convertFromString();
 
-  static <U> StringConversion<U> from(Function<U, String> toString, Function<String, U> fromString) {
+  static <U> StringConversion<U> from(Function<U, String> toString,
+      Function<String, U> fromString) {
     return new StringConversion<U>() {
       @Override
       public Function<U, String> convertToString() {

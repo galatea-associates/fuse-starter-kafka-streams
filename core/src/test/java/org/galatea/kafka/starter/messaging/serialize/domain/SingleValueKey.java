@@ -17,7 +17,7 @@ import org.galatea.kafka.starter.messaging.serialize.annotation.TupleKeyField;
 @Builder
 @Getter
 @EqualsAndHashCode
-public class SimpleKey implements TupleKey {
+public class SingleValueKey implements TupleKey {
 
   @TupleKeyField(1)
   private String field1;
