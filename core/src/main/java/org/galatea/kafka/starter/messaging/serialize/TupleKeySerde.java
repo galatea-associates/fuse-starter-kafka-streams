@@ -11,7 +11,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.common.serialization.Serializer;
+import org.galatea.kafka.starter.messaging.serialize.annotation.TupleKeyField;
 import org.galatea.kafka.starter.messaging.serialize.exception.SerializationException;
+import org.galatea.kafka.starter.messaging.serialize.util.StringConversion;
 
 @Slf4j
 public class TupleKeySerde<T extends TupleKey> implements Serde<T> {

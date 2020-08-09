@@ -1,4 +1,4 @@
-package org.galatea.kafka.starter.messaging.serialize;
+package org.galatea.kafka.starter.messaging.serialize.util;
 
 import java.util.function.Function;
 

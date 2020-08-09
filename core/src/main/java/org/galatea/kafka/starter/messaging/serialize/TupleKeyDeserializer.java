@@ -9,6 +9,7 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.serialization.Deserializer;
 import org.galatea.kafka.starter.messaging.serialize.exception.SerializationException;
+import org.galatea.kafka.starter.messaging.serialize.util.StringConversion;
 
 class TupleKeyDeserializer<T extends TupleKey> implements Deserializer<T> {
 

@@ -1,4 +1,4 @@
-package org.galatea.kafka.starter.messaging.serialize;
+package org.galatea.kafka.starter.messaging.serialize.annotation;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;

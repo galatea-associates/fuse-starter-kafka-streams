@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.serialization.Serializer;
+import org.galatea.kafka.starter.messaging.serialize.util.StringConversion;
 
 class TupleKeySerializer<T extends TupleKey> implements Serializer<T> {
 
