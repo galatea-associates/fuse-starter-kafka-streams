@@ -10,7 +10,6 @@ import static org.unitils.reflectionassert.ReflectionAssert.assertReflectionEqua
 
 import java.io.Closeable;
 import java.io.File;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -27,11 +26,12 @@ import java.util.concurrent.Callable;
 import java.util.function.Function;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsConfig;
+import org.apache.kafka.streams.TestInputTopic;
+import org.apache.kafka.streams.TestOutputTopic;
 import org.apache.kafka.streams.Topology;
 import org.apache.kafka.streams.TopologyTestDriver;
 import org.apache.kafka.streams.processor.StateStore;
@@ -41,7 +41,6 @@ import org.apache.kafka.streams.state.QueryableStoreType;
 import org.galatea.kafka.starter.messaging.Topic;
 import org.galatea.kafka.starter.testing.alias.AliasHelper;
 import org.galatea.kafka.starter.testing.avro.RecordPostProcessor;
-import org.galatea.kafka.starter.testing.bean.RecordBeanHelper;
 import org.galatea.kafka.starter.testing.conversion.ConversionUtil;
 import org.springframework.util.FileSystemUtils;
 import org.unitils.reflectionassert.ReflectionComparatorMode;
@@ -101,8 +100,7 @@ public class TopologyTester implements Closeable {
 
     for (Entry<String, StateStore> e : driver.getAllStateStores().entrySet()) {
       String storeName = e.getKey();
-      StateStore store = e.getValue();
-      KeyValueStore<Object, ?> kvStore = (KeyValueStore<Object, ?>) store;
+      KeyValueStore<Object, ?> kvStore = (KeyValueStore<Object, ?>) e.getValue();
       try (KeyValueIterator<Object, ?> iter = kvStore.all()) {
         while (iter.hasNext()) {
           KeyValue<Object, ?> entry = iter.next();
@@ -123,29 +121,40 @@ public class TopologyTester implements Closeable {
 
   @SuppressWarnings("unchecked")
   public <K, V> TopicConfig<K, V> getInputConfig(Topic<K, V> topic) {
-    return (TopicConfig) inputTopicConfig.get(topic.getName());
+    return (TopicConfig<K, V>) inputTopicConfig.get(topic.getName());
   }
 
   @SuppressWarnings("unchecked")
   public <K, V> TopicConfig<K, V> getOutputConfig(Topic<K, V> topic) {
-    return (TopicConfig) outputTopicConfig.get(topic.getName());
+    return (TopicConfig<K, V>) outputTopicConfig.get(topic.getName());
   }
 
   @SuppressWarnings("unchecked")
   public <K, V> TopicConfig<K, V> getStoreConfig(String storeName) {
-    return (TopicConfig) storeConfig.get(storeName);
+    return (TopicConfig<K, V>) storeConfig.get(storeName);
   }
 
   public <K, V> TopicConfig<K, V> configureInputTopic(Topic<K, V> topic,
       Callable<K> createEmptyKey, Callable<V> createEmptyValue) {
+
     if (inputTopicConfig.containsKey(topic.getName())) {
       throw new IllegalStateException(
           String.format("Input topic %s cannot be configured more than once", topic.getName()));
     }
     inputTopicConfig.put(topic.getName(),
         new TopicConfig<>(topic.getName(), topic.getKeySerde(), topic.getValueSerde(),
-            createEmptyKey, createEmptyValue));
+            createEmptyKey, createEmptyValue, testInputTopic(topic)));
     return inputTopicConfig(topic);
+  }
+
+  private <K, V> TestInputTopic<K, V> testInputTopic(Topic<K, V> topic) {
+    return driver.createInputTopic(topic.getName(), topic.getKeySerde().serializer(),
+        topic.getValueSerde().serializer());
+  }
+
+  private <K, V> TestOutputTopic<K, V> testOutputTopic(Topic<K, V> topic) {
+    return driver.createOutputTopic(topic.getName(), topic.getKeySerde().deserializer(),
+        topic.getValueSerde().deserializer());
   }
 
   public <K, V> TopicConfig<K, V> configureOutputTopic(Topic<K, V> topic,
@@ -156,7 +165,7 @@ public class TopologyTester implements Closeable {
     }
     outputTopicConfig.put(topic.getName(),
         new TopicConfig<>(topic.getName(), topic.getKeySerde(), topic.getValueSerde(),
-            createEmptyKey, createEmptyValue));
+            createEmptyKey, createEmptyValue, testOutputTopic(topic)));
     return outputTopicConfig(topic);
   }
 
@@ -200,7 +209,7 @@ public class TopologyTester implements Closeable {
     }
     log.info("{} Piping record into topology on topic {}: {}", TopologyTester.class.getSimpleName(),
         topic.getName(), record);
-    driver.pipeInput(topicConfig.factory().create(Collections.singletonList(record)));
+    topicConfig.getConfiguredInput().pipeInput(record.key, record.value);
   }
 
   private <V, K> boolean keyIsBean(TopicConfig<K, V> topicConfig) throws Exception {
@@ -270,7 +279,8 @@ public class TopologyTester implements Closeable {
       return expectedOutput;
     }
 
-    Set<String> expectedFields = expectedRecordMaps.iterator().next().keySet();
+    Set<String> expectedFields = expectedRecordMaps.stream().findFirst().map(Map::keySet)
+        .orElse(new HashSet<>());
 
     // verify that all maps in expectedRecordMaps have the same set of fields
     for (Map<String, String> expectedRecordMap : expectedRecordMaps) {
@@ -334,16 +344,10 @@ public class TopologyTester implements Closeable {
       }
     }
 
-    for (Map<String, String> expectedEntryMap : expected) {
-      if (!expectedEntryMap.keySet().equals(expectedFields)) {
-        throw new IllegalArgumentException(String.format("All maps in Collection of maps must "
-                + "have the same expected fields. \n\tExpected fields: %s\n\tActual Fields: %s",
-            expectedFields.toString(), expectedEntryMap.toString()));
-      }
-      KeyValue<Object, Object> expectedRecord = createRecordWithProcessing(expectedEntryMap,
-          storeConfig);
-      assertTrue(String.format("Store does not contain record with values: %s",
-          expectedEntryMap.toString()), storeContentsStripped.contains(expectedRecord));
+    for (KeyValue<Object, Object> expectedRecord : expectedRecords) {
+      assertTrue(String.format("Store does not contain record with matching fields %s; values: %s",
+          expectedFields.toString(), expectedRecord),
+          storeContentsStripped.contains(expectedRecord));
     }
   }
 
@@ -376,16 +380,9 @@ public class TopologyTester implements Closeable {
       }
     }
 
-    for (Map<String, String> expectedEntryMap : unexpected) {
-      if (!expectedEntryMap.keySet().equals(expectedFields)) {
-        throw new IllegalArgumentException(String.format("All maps in Collection of maps must "
-                + "have the same expected fields. \n\tExpected fields: %s\n\tActual Fields: %s",
-            expectedFields.toString(), expectedEntryMap.toString()));
-      }
-      KeyValue<Object, Object> unexpectedRecord = createRecordWithProcessing(expectedEntryMap,
-          storeConfig);
-      assertFalse(String.format("Store contains record with values: %s:\n\t%s",
-          expectedEntryMap.toString(), unexpectedRecord),
+    for (KeyValue<Object, Object> unexpectedRecord : unexpectedRecords) {
+      assertFalse(String.format("Store does not contain record with matching fields %s; values: %s",
+          expectedFields.toString(), unexpectedRecord),
           storeContentsStripped.contains(unexpectedRecord));
     }
   }
@@ -470,16 +467,8 @@ public class TopologyTester implements Closeable {
     List<KeyValue<K, V>> comparableOutput = stripUnnecessaryFields(reducedOutput, expectedFields,
         topicConfig);
 
-    List<KeyValue<K, V>> expectedOutput = new ArrayList<>();
-    for (Map<String, String> expectedRecordMap : expectedRecords) {
-      if (!expectedRecordMap.keySet().equals(expectedFields)) {
-        throw new IllegalArgumentException(String.format("Expected records (as maps) have "
-                + "differing key sets.\n\tExpected: %s\n\tActual: %s", expectedFields,
-            expectedRecordMap.keySet()));
-      }
-
-      expectedOutput.add(createRecordWithProcessing(expectedRecordMap, topicConfig));
-    }
+    Collection<KeyValue<K, V>> expectedOutput = expectedRecordsFromMaps(topicConfig,
+        expectedRecords, extraFieldsToCompareWithDefaults);
 
     assertListEquals(expectedOutput, comparableOutput, true);
   }
@@ -536,19 +525,10 @@ public class TopologyTester implements Closeable {
   }
 
   private <K, V> List<KeyValue<K, V>> readOutput(TopicConfig<K, V> config) {
-    List<KeyValue<K, V>> outputList = new ArrayList<>();
-    ProducerRecord<K, V> record;
-    do {
-      record = driver.readOutput(config.getTopicName(), config.getKeySerde().deserializer(),
-          config.getValueSerde().deserializer());
-      if (record != null) {
-        outputList.add(new KeyValue<>(record.key(), record.value()));
-      }
-    } while (record != null);
-
-    return outputList;
+    return config.getConfiguredOutput().readKeyValuesToList();
   }
 
+  @SuppressWarnings("unchecked")
   private <K, V> TopicConfig<K, V> inputTopicConfig(Topic<K, V> topic) {
     TopicConfig<?, ?> topicConfig = inputTopicConfig.get(topic.getName());
     if (topicConfig == null) {
@@ -558,6 +538,7 @@ public class TopologyTester implements Closeable {
     return (TopicConfig<K, V>) topicConfig;
   }
 
+  @SuppressWarnings("unchecked")
   private <K, V> TopicConfig<K, V> outputTopicConfig(Topic<K, V> topic) {
     TopicConfig<?, ?> topicConfig = outputTopicConfig.get(topic.getName());
     if (topicConfig == null) {
@@ -567,6 +548,7 @@ public class TopologyTester implements Closeable {
     return (TopicConfig<K, V>) topicConfig;
   }
 
+  @SuppressWarnings("unchecked")
   private <K, V> TopicConfig<K, V> storeConfig(String storeName) {
     TopicConfig<?, ?> topicConfig = storeConfig.get(storeName);
     if (topicConfig == null) {
@@ -577,7 +559,7 @@ public class TopologyTester implements Closeable {
   }
 
   @Override
-  public void close() throws IOException {
+  public void close() {
     driver.close();
   }
 }

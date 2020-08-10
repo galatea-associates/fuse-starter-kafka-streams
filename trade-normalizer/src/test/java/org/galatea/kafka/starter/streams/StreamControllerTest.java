@@ -17,6 +17,7 @@ import org.galatea.kafka.starter.messaging.trade.TradeMsgValue;
 import org.galatea.kafka.starter.messaging.trade.input.InputTradeMsgKey;
 import org.galatea.kafka.starter.messaging.trade.input.InputTradeMsgValue;
 import org.galatea.kafka.starter.testing.TopologyTester;
+import org.galatea.kafka.starter.testing.avro.AvroPostProcessor;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -59,7 +60,7 @@ public class StreamControllerTest {
       tester.configureOutputTopic(normalizedTradeTopic, TradeMsgKey::new, TradeMsgValue::new);
 
       tester.registerBeanClass(SpecificRecord.class);
-      tester.registerAvroClass(SpecificRecord.class);
+      tester.registerPostProcessor(SpecificRecord.class, AvroPostProcessor.defaultUtil());
     }
     tester.beforeTest();
 
