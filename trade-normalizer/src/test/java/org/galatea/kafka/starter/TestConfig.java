@@ -1,11 +1,15 @@
 package org.galatea.kafka.starter;
 
+import static org.mockito.Mockito.mock;
+
 import io.confluent.kafka.schemaregistry.client.MockSchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 import io.confluent.kafka.serializers.AbstractKafkaAvroSerDeConfig;
 import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.common.serialization.Serde;
 import org.galatea.kafka.starter.config.MessagingConfig;
 import org.galatea.kafka.starter.messaging.Topic;
@@ -47,6 +51,9 @@ public class TestConfig {
           }
 
           return new Topic<>(topic.getName(), keySerde, valueSerde);
+        } else if (bean.getClass().equals(KafkaProducer.class)) {
+          ((KafkaProducer) bean).close(Duration.ZERO);
+          return mock(KafkaProducer.class);
         }
         return bean;
       }
