@@ -23,48 +23,55 @@ import org.galatea.kafka.starter.testing.avro.fieldtypes.AvroMapType;
 import org.galatea.kafka.starter.testing.avro.fieldtypes.AvroStringType;
 import org.galatea.kafka.starter.testing.avro.fieldtypes.AvroTimestampType;
 
-public class AvroMessageUtil {
+/**
+ * Process an avro record, making sure no fields have invalid values (like null values in nonnull
+ * fields). Any invalid fields are updated to have valid values (nonnull fields are set to a default
+ * value like empty string, 0, first enum symbol, etc).
+ */
+public class AvroPostProcessor<T extends SpecificRecord> implements RecordPostProcessor<T> {
 
-  private static AvroMessageUtil defaultUtil = null;
+  private static AvroPostProcessor<?> defaultUtil = null;
 
-  public static AvroMessageUtil defaultUtil() {
+  public static <T extends SpecificRecord> AvroPostProcessor<T> defaultUtil() {
     if (defaultUtil == null) {
-      defaultUtil = new AvroMessageUtil();
-      defaultUtil.registerType(Type.ENUM, new AvroEnumType());
-      defaultUtil.registerType(Type.ARRAY, new AvroArrayType());
-      defaultUtil.registerType(Type.MAP, new AvroMapType());
-      defaultUtil.registerType(Type.FIXED, new AvroFixedType());
-      defaultUtil.registerType(Type.STRING, new AvroStringType());
-      defaultUtil.registerType(Type.BYTES, new AvroBytesType());
-      defaultUtil.registerType(Type.INT, new AvroIntType());
-      defaultUtil.registerType(Type.LONG, new AvroLongType());
-      defaultUtil.registerType(Type.FLOAT, new AvroFloatType());
-      defaultUtil.registerType(Type.DOUBLE, new AvroDoubleType());
-      defaultUtil.registerType(Type.BOOLEAN, new AvroBooleanType());
-      defaultUtil.registerType(LogicalTypes.date(), new AvroLocalDateType());
-      defaultUtil.registerType(LogicalTypes.timeMicros(), new AvroLocalTimeType());
-      defaultUtil.registerType(LogicalTypes.timeMillis(), new AvroLocalTimeType());
-      defaultUtil.registerType(LogicalTypes.timestampMicros(), new AvroTimestampType());
-      defaultUtil.registerType(LogicalTypes.timestampMillis(), new AvroTimestampType());
+      defaultUtil = new AvroPostProcessor<>()
+          .registerType(Type.ENUM, new AvroEnumType())
+          .registerType(Type.ARRAY, new AvroArrayType())
+          .registerType(Type.MAP, new AvroMapType())
+          .registerType(Type.FIXED, new AvroFixedType())
+          .registerType(Type.STRING, new AvroStringType())
+          .registerType(Type.BYTES, new AvroBytesType())
+          .registerType(Type.INT, new AvroIntType())
+          .registerType(Type.LONG, new AvroLongType())
+          .registerType(Type.FLOAT, new AvroFloatType())
+          .registerType(Type.DOUBLE, new AvroDoubleType())
+          .registerType(Type.BOOLEAN, new AvroBooleanType())
+          .registerType(LogicalTypes.date(), new AvroLocalDateType())
+          .registerType(LogicalTypes.timeMicros(), new AvroLocalTimeType())
+          .registerType(LogicalTypes.timeMillis(), new AvroLocalTimeType())
+          .registerType(LogicalTypes.timestampMicros(), new AvroTimestampType())
+          .registerType(LogicalTypes.timestampMillis(), new AvroTimestampType());
     }
-    return defaultUtil;
+    return (AvroPostProcessor<T>) defaultUtil;
   }
 
   private final Map<Type, AvroFieldType> PRIMITIVE_TYPES = new HashMap<>();
   private final Map<LogicalType, AvroFieldType> LOGICAL_TYPES = new HashMap<>();
 
-  public void registerType(Type type, AvroFieldType fieldType) {
+  public AvroPostProcessor<T> registerType(Type type, AvroFieldType fieldType) {
     PRIMITIVE_TYPES.put(type, fieldType);
+    return this;
   }
 
-  public void registerType(LogicalType type, AvroFieldType fieldType) {
+  public AvroPostProcessor<T> registerType(LogicalType type, AvroFieldType fieldType) {
     LOGICAL_TYPES.put(type, fieldType);
+    return this;
   }
 
-  public <T extends SpecificRecord> void populateRequiredFieldsWithDefaults(T message)
+  public T process(T message)
       throws ClassNotFoundException, InstantiationException, IllegalAccessException {
     if (message == null) {
-      return;
+      return null;
     }
     Schema schema = message.getSchema();
 
@@ -74,9 +81,10 @@ public class AvroMessageUtil {
         setFieldDefault(field, message);
       }
     }
+    return message;
   }
 
-  private <T extends SpecificRecord> void setFieldDefault(Field field, T message)
+  private void setFieldDefault(Field field, T message)
       throws ClassNotFoundException, IllegalAccessException, InstantiationException {
     LogicalType logicalType = fieldLogicalType(field.schema());
     Type primitiveType = fieldPrimitiveType(field.schema());
@@ -95,8 +103,8 @@ public class AvroMessageUtil {
       }
       message.put(field.pos(), fieldType.defaultValue());
     } else if (primitiveType.equals(Type.RECORD)) {
-      Object newRecord = Class.forName(field.schema().getFullName()).newInstance();
-      populateRequiredFieldsWithDefaults((SpecificRecord) newRecord);
+      T newRecord = (T) Class.forName(field.schema().getFullName()).newInstance();
+      process(newRecord);
       message.put(field.pos(), newRecord);
     } else {
       fieldType = PRIMITIVE_TYPES.get(primitiveType);

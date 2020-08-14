@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.specific.SpecificRecord;
 import org.apache.kafka.streams.Topology;
 import org.galatea.kafka.starter.messaging.KafkaStreamsConfig;
+import org.galatea.kafka.starter.messaging.KafkaStreamsStarter;
 import org.galatea.kafka.starter.messaging.Topic;
 import org.galatea.kafka.starter.messaging.security.SecurityIsinMsgKey;
 import org.galatea.kafka.starter.messaging.security.SecurityMsgValue;
@@ -20,10 +21,12 @@ import org.galatea.kafka.starter.messaging.trade.input.InputTradeMsgValue;
 import org.galatea.kafka.starter.streams.StreamController;
 import org.galatea.kafka.starter.streams.StreamControllerTestHelper;
 import org.galatea.kafka.starter.testing.TopologyTester;
+import org.galatea.kafka.starter.testing.avro.AvroPostProcessor;
 import org.junit.Ignore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.ContextConfiguration;
 
 @Slf4j
@@ -43,6 +46,8 @@ public class TradeNormalizerCucumberStep {
   private Topic<SecurityIsinMsgKey, SecurityMsgValue> securityTopic;
   @Autowired
   private Topic<TradeMsgKey, TradeMsgValue> normalizedTradeTopic;
+  @MockBean
+  private KafkaStreamsStarter mockStreamsStarter;   // mock KafkaStreamsStarter, so
 
   private static TopologyTester tester;
 
@@ -57,7 +62,7 @@ public class TradeNormalizerCucumberStep {
       tester.configureOutputTopic(normalizedTradeTopic, TradeMsgKey::new, TradeMsgValue::new);
 
       tester.registerBeanClass(SpecificRecord.class);
-      tester.registerAvroClass(SpecificRecord.class);
+      tester.registerPostProcessor(SpecificRecord.class, AvroPostProcessor.defaultUtil());
     }
     tester.beforeTest();
     log.info("Running scenario: {}", scenario.getName());
