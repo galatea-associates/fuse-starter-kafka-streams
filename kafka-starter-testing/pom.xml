@@ -26,7 +26,6 @@
     <version>1.0.0-SNAPSHOT</version>
   </parent>
 
-  <groupId>org.galatea</groupId>
   <artifactId>kafka-starter-testing</artifactId>
   <version>1.0.0-SNAPSHOT</version>
   <packaging>jar</packaging>
