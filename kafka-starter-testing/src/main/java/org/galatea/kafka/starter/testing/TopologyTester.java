@@ -411,7 +411,7 @@ public class TopologyTester implements Closeable {
         log.info("Processed key: {}", processedKey);
       }
       if (processedValue == null && forClass.isInstance(record.value)) {
-        log.info("Post-processing key {}", record.value);
+        log.info("Post-processing value {}", record.value);
         processedValue = useProcessor((RecordPostProcessor<V>) processor, record.value);
         log.info("Processed value: {}", processedValue);
       }

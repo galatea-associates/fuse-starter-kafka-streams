@@ -20,6 +20,7 @@ import org.galatea.kafka.starter.messaging.trade.input.InputTradeMsgKey;
 import org.galatea.kafka.starter.messaging.trade.input.InputTradeMsgValue;
 import org.galatea.kafka.starter.streams.StreamController;
 import org.galatea.kafka.starter.streams.StreamControllerTestHelper;
+import org.galatea.kafka.starter.streams.TradeTransformer;
 import org.galatea.kafka.starter.testing.TopologyTester;
 import org.galatea.kafka.starter.testing.avro.AvroPostProcessor;
 import org.junit.Ignore;
@@ -31,7 +32,7 @@ import org.springframework.test.context.ContextConfiguration;
 
 @Slf4j
 @SpringBootTest
-@ContextConfiguration(classes = {TestConfig.class, StreamController.class})
+@ContextConfiguration(classes = {TestConfig.class, StreamController.class, TradeTransformer.class})
 @EnableAutoConfiguration
 @Ignore   // Without this, IntelliJ will try to run this class, find no tests, and error
 public class TradeNormalizerCucumberStep {
