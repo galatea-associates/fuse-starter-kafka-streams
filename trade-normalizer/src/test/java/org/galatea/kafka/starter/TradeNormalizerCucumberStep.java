@@ -5,6 +5,7 @@ import io.cucumber.datatable.DataTable;
 import io.cucumber.java.Before;
 import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
+import java.time.Duration;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.specific.SpecificRecord;
@@ -87,4 +88,8 @@ public class TradeNormalizerCucumberStep {
     tester.assertOutputList(normalizedTradeTopic, table.asMaps(), true);
   }
 
+  @Given("time passes")
+  public void timePasses() {
+    tester.getDriver().advanceWallClockTime(Duration.ofDays(120));
+  }
 }

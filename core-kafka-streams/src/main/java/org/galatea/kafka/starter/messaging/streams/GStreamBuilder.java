@@ -3,9 +3,12 @@ package org.galatea.kafka.starter.messaging.streams;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.streams.StreamsBuilder;
+import org.apache.kafka.streams.Topology;
 import org.apache.kafka.streams.kstream.Consumed;
-import org.apache.kafka.streams.kstream.Materialized;
+import org.apache.kafka.streams.state.internals.KeyValueStoreBuilder;
+import org.apache.kafka.streams.state.internals.RocksDbKeyValueBytesStoreSupplier;
 import org.galatea.kafka.starter.messaging.Topic;
 
 @Slf4j
@@ -23,9 +26,19 @@ public class GStreamBuilder {
 
   public <K, V> GStreamBuilder addGlobalStore(GlobalStoreRef<K, V> ref) {
     @NonNull Topic<K, V> topic = ref.getOnTopic();
-    inner.globalTable(topic.getName(), Consumed.with(topic.getKeySerde(), topic.getValueSerde()),
-        Materialized.as(ref.getName()));
+    inner.addGlobalStore(
+        new KeyValueStoreBuilder<>(new RocksDbKeyValueBytesStoreSupplier(ref.getName(), false),
+            ref.getKeySerde(), ref.getValueSerde(), Time.SYSTEM),
+        topic.getName(), consumedWith(topic), () -> new SimpleProcessor<>(ref));
     return this;
+  }
+
+  public Topology build() {
+    return inner.build();
+  }
+
+  private static <K, V> Consumed<K, V> consumedWith(Topic<K, V> topic) {
+    return Consumed.with(topic.getKeySerde(), topic.getValueSerde());
   }
 
   private String className(Object obj) {

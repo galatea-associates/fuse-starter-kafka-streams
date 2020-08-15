@@ -1,27 +1,70 @@
 package org.galatea.kafka.starter.streams;
 
 import java.util.Collection;
+import java.util.Optional;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.streams.KeyValue;
-import org.galatea.kafka.starter.messaging.streams.TaskContext;
+import org.galatea.kafka.starter.messaging.security.SecurityIsinMsgKey;
+import org.galatea.kafka.starter.messaging.security.SecurityMsgValue;
+import org.galatea.kafka.starter.messaging.streams.GlobalStore;
+import org.galatea.kafka.starter.messaging.streams.GlobalStoreRef;
+import org.galatea.kafka.starter.messaging.streams.ProcessorTaskContext;
 import org.galatea.kafka.starter.messaging.streams.TaskStoreRef;
 import org.galatea.kafka.starter.messaging.streams.TransformerRef;
+import org.galatea.kafka.starter.messaging.streams.annotate.PunctuateMethod;
 import org.galatea.kafka.starter.messaging.trade.TradeMsgKey;
 import org.galatea.kafka.starter.messaging.trade.TradeMsgValue;
 import org.galatea.kafka.starter.messaging.trade.input.InputTradeMsgKey;
 import org.galatea.kafka.starter.messaging.trade.input.InputTradeMsgValue;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
-public class TradeTransformer implements
+@RequiredArgsConstructor
+public class TradeTransformer extends
     TransformerRef<InputTradeMsgKey, InputTradeMsgValue, TradeMsgKey, TradeMsgValue, Object> {
+
+  private final GlobalStoreRef<SecurityIsinMsgKey, SecurityMsgValue> securityStoreRef;
+  @Value("${punctuate.interval}")
+  private String something;
 
   @Override
   public KeyValue<TradeMsgKey, TradeMsgValue> transform(InputTradeMsgKey key,
-      InputTradeMsgValue value, TaskContext<Object> context) {
-    log.info("Processing {} | {}", key, value);
-    return null;
+      InputTradeMsgValue value, ProcessorTaskContext<TradeMsgKey, TradeMsgValue, Object> context) {
+    log.info("{} Processing {} | {}", context.taskId(), key, value);
+    GlobalStore<SecurityIsinMsgKey, SecurityMsgValue> securityStore = context
+        .store(securityStoreRef);
+
+    Optional<SecurityMsgValue> securityMsg = securityStore
+        .get(SecurityIsinMsgKey.newBuilder().setIsin(value.getIsin()).build());
+
+    if (securityMsg.isPresent()) {
+      TradeMsgKey newKey = TradeMsgKey.newBuilder().setTradeId(key.getTradeId()).build();
+      TradeMsgValue newValue = TradeMsgValue.newBuilder()
+          .setTradeId(value.getTradeId())
+          .setSecurityId(securityMsg.get().getSecurityId())
+          .setCounterparty(value.getCounterparty())
+          .setPortfolio(value.getPortfolio())
+          .setQty(value.getQty())
+          .build();
+
+      return KeyValue.pair(newKey, newValue);
+    } else {
+      log.warn("Could not enrich trade {} | {}", key, value);
+      return null;
+    }
+  }
+
+  @PunctuateMethod("${punctuate.interval}")
+  public void doThing() {
+    log.info("Running punctuate");
+  }
+
+  @PunctuateMethod("PT30s")
+  public void logAnother() {
+    log.info("Running shorter punctuate");
   }
 
   @Override

@@ -9,11 +9,11 @@ import org.galatea.kafka.starter.messaging.streams.util.PeekAction;
 class PeekTransformer<K, V> implements ValueTransformerWithKey<K, V, V> {
 
   private final PeekAction<K,V> action;
-  private TaskContext<Object> context;
+  private TaskContext context;
 
   @Override
   public void init(ProcessorContext c) {
-    context = new TaskContext<>(c, null);
+    context = new TaskContext(c);
   }
 
   @Override

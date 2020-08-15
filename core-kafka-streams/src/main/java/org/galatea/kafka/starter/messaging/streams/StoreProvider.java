@@ -18,7 +18,11 @@ public class StoreProvider {
   @SuppressWarnings("unchecked")
   public <K, V> TaskStore<K, V> store(TaskStoreRef<K, V> ref) {
     return (TaskStore<K, V>) taskStores.computeIfAbsent(ref.getName(),
-        name -> new TaskStore<>((KeyValueStore<?, ?>) context.getStateStore(name)));
+        name -> {
+          TaskContext taskContext = new TaskContext(context);
+          return new TaskStore<>((KeyValueStore<K, V>) context.getStateStore(name),
+              ref.getRetentionPolicy(), taskContext);
+        });
   }
 
   @SuppressWarnings("unchecked")

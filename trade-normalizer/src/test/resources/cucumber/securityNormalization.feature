@@ -23,3 +23,5 @@ Feature: Security Normalization
 
     Then output the following trade records:
       | securityId | qty |
+
+    Given time passes

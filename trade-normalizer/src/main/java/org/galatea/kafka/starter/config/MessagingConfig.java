@@ -4,12 +4,14 @@ import io.confluent.kafka.serializers.AbstractKafkaAvroSerDeConfig;
 import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
 import java.util.HashMap;
 import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.specific.SpecificRecord;
 import org.apache.kafka.common.serialization.Serde;
 import org.galatea.kafka.starter.messaging.Topic;
 import org.galatea.kafka.starter.messaging.security.SecurityIsinMsgKey;
 import org.galatea.kafka.starter.messaging.security.SecurityMsgValue;
 import org.galatea.kafka.starter.messaging.streams.GlobalStoreRef;
+import org.galatea.kafka.starter.messaging.streams.TaskStoreRef;
 import org.galatea.kafka.starter.messaging.trade.TradeMsgKey;
 import org.galatea.kafka.starter.messaging.trade.TradeMsgValue;
 import org.galatea.kafka.starter.messaging.trade.input.InputTradeMsgKey;
@@ -18,6 +20,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+@Slf4j
 @Configuration
 public class MessagingConfig {
 
@@ -45,6 +48,15 @@ public class MessagingConfig {
         .build();
   }
 
+  @Bean
+  TaskStoreRef<InputTradeMsgKey, InputTradeMsgValue> tradeStoreRef(
+      Topic<InputTradeMsgKey, InputTradeMsgValue> tradeTopic) {
+    return TaskStoreRef.<InputTradeMsgKey, InputTradeMsgValue>builder()
+        .name("trade")
+        .keySerde(tradeTopic.getKeySerde())
+        .valueSerde(tradeTopic.getValueSerde())
+        .build();
+  }
   @Bean
   Topic<TradeMsgKey, TradeMsgValue> normalizedTradeTopic(
       @Value("${messaging.topic.output.trade}") String topicName,

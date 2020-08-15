@@ -7,14 +7,24 @@ import lombok.RequiredArgsConstructor;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.state.KeyValueIterator;
 import org.apache.kafka.streams.state.KeyValueStore;
+import org.galatea.kafka.starter.messaging.streams.util.RetentionPolicy;
 
 @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
-class TaskStore<K,V> implements KafkaStreamsStore<K,V>{
-  private final KeyValueStore<K,V> inner;
+class TaskStore<K, V> implements KafkaStreamsStore<K, V> {
+
+  private final KeyValueStore<K, V> inner;
+  private final RetentionPolicy<K, V> retentionPolicy;
+  private final TaskContext taskContext;
 
   @Override
   public Optional<V> get(K key) {
-    return Optional.ofNullable(inner.get(key));
+    V raw = inner.get(key);
+    if (raw != null && retentionPolicy != null
+        && !retentionPolicy.shouldKeep(key, raw, taskContext)) {
+      inner.delete(key);
+      raw = null;
+    }
+    return Optional.ofNullable(raw);
   }
 
   @Override

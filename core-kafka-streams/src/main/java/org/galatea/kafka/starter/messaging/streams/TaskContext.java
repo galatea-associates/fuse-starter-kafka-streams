@@ -1,22 +1,18 @@
 package org.galatea.kafka.starter.messaging.streams;
 
-import lombok.Getter;
 import lombok.experimental.Delegate;
 import org.apache.kafka.streams.processor.ProcessorContext;
 
-public class TaskContext<T> {
+public class TaskContext {
 
-  @Delegate
+  @Delegate(excludes = ProcessorContextDelegateExcludes.class)
   private final ProcessorContext innerContext;
-  @Getter
-  private final T state;
 
-  public TaskContext(ProcessorContext innerContext, T state) {
-    this.innerContext = innerContext;
-    this.state = state;
-    storeProvider = new StoreProvider(innerContext);
+  private interface ProcessorContextDelegateExcludes {
+    <K,V> void forward(K key, V value);
   }
 
-  @Delegate
-  private final StoreProvider storeProvider;
+  public TaskContext(ProcessorContext innerContext) {
+    this.innerContext = innerContext;
+  }
 }

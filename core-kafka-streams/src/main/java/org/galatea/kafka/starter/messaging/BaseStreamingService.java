@@ -23,7 +23,9 @@ public abstract class BaseStreamingService implements Service {
 
   @Override
   final public void start() {
-    streams = new KafkaStreams(buildTopology(), kafkaStreamsConfig.asProperties());
+    Topology topology = buildTopology();
+    log.info("{}", topology.describe());
+    streams = new KafkaStreams(topology, kafkaStreamsConfig.asProperties());
     onStreamCreation(streams);
     streams.start();
   }
