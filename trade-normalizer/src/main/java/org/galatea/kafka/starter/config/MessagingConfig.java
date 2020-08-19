@@ -57,6 +57,7 @@ public class MessagingConfig {
         .valueSerde(tradeTopic.getValueSerde())
         .build();
   }
+
   @Bean
   Topic<TradeMsgKey, TradeMsgValue> normalizedTradeTopic(
       @Value("${messaging.topic.output.trade}") String topicName,

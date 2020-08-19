@@ -1,8 +1,6 @@
 package org.galatea.kafka.starter.messaging.streams;
 
 import java.util.Collection;
-import java.util.Collections;
-import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +16,7 @@ import org.galatea.kafka.starter.messaging.streams.util.PeekAction;
 public class GStream<K, V> {
 
   private final KStream<K, V> inner;
+  private final GStreamBuilder builder;
   private static final AtomicLong peekTransformerCounter = new AtomicLong(0);
 
   public GStream<K, V> peek(PeekAction<K, V> action) {
@@ -26,12 +25,25 @@ public class GStream<K, V> {
     return this;
   }
 
-  public <K1, V1, T> GStream<K1, V1> transform(TransformerRef<K, V, K1, V1, T> transformer) {
-    Collection<TaskStoreRef<?, ?>> refs = Optional.ofNullable(transformer.taskStores())
-        .orElse(Collections.emptyList());
-    String[] storeNames = refs.stream().map(StoreRef::getName).toArray(String[]::new);
-    return new GStream<>(
-        inner.transform(() -> new ConfiguredTransformer<>(transformer), storeNames));
+  public <K1, V1, T> GStream<K1, V1> transform(
+      StatefulTransformerRef<K, V, K1, V1, T> transformer) {
+    Collection<TaskStoreRef<?, ?>> taskStores = TaskStoreUtil.getTaskStores(transformer);
+    createNeededStores(taskStores);
+
+    String[] storeNames = taskStores.stream().map(StoreRef::getName).toArray(String[]::new);
+    return newStream(inner.transform(() -> new ConfiguredTransformer<>(transformer), storeNames));
+  }
+
+  private void createNeededStores(Collection<TaskStoreRef<?, ?>> storeRefs) {
+    storeRefs.forEach(ref -> {
+      if (!ref.isCreated()) {
+        builder.addStateStore(ref);
+      }
+    });
+  }
+
+  private <K, V> GStream<K, V> newStream(KStream<K, V> inner) {
+    return new GStream<>(inner, builder);
   }
 
   public GStream<K, V> repartition(Topic<K, V> topic) {
@@ -40,7 +52,7 @@ public class GStream<K, V> {
             c.taskId(), className(k), className(v), k, v))
         .inner.through(topic.getName(), producedWith(topic));
 
-    return new GStream<>(postRepartition)
+    return newStream(postRepartition)
         .peek((k, v, c) -> log.info("{} Consumed Repartition [{}|{}] Key: {} Value: {}", c.taskId(),
             className(k), className(v), k, v));
   }

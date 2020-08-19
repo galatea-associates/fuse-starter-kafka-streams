@@ -21,10 +21,10 @@ import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 class PunctuateAnnotationUtil {
 
   static <K, V, T> Collection<ProcessorPunctuate<K, V, T>> getAnnotatedPunctuates(
-      TransformerRef<?, ?, K, V, T> transformerRef) {
+      StatefulTransformerRef<?, ?, K, V, T> statefulTransformerRef) {
 
     Collection<ProcessorPunctuate<K, V, T>> punctuates = new LinkedList<>();
-    Class<? extends TransformerRef> refClass = transformerRef.getClass();
+    Class<? extends StatefulTransformerRef> refClass = statefulTransformerRef.getClass();
     for (Method method : refClass.getMethods()) {
       if (method.isAnnotationPresent(PunctuateMethod.class)) {
         if (!Modifier.isPublic(method.getModifiers())
@@ -37,7 +37,7 @@ class PunctuateAnnotationUtil {
 
         Duration parsedDuration;
         try {
-          annotationInterval = tryResolve(transformerRef.getBeanFactory(), annotationInterval);
+          annotationInterval = tryResolve(statefulTransformerRef.getBeanFactory(), annotationInterval);
           parsedDuration = Duration.parse(annotationInterval);
         } catch (RuntimeException e) {
           throw new IllegalTopologyException(String.format("Illegal Duration interval %s in %s "
@@ -46,7 +46,7 @@ class PunctuateAnnotationUtil {
         }
         List<PunctuateArgSupplier<K, V, T, Object>> argSuppliers = getPunctuateArgSuppliers(method);
 
-        punctuates.add(punctuateFrom(transformerRef, method, parsedDuration, argSuppliers));
+        punctuates.add(punctuateFrom(statefulTransformerRef, method, parsedDuration, argSuppliers));
       }
     }
     return punctuates;
@@ -74,17 +74,17 @@ class PunctuateAnnotationUtil {
   }
 
   private static <K, V, T> ProcessorPunctuate<K, V, T> punctuateFrom(
-      TransformerRef<?, ?, K, V, T> transformerRef, Method method, Duration interval,
+      StatefulTransformerRef<?, ?, K, V, T> statefulTransformerRef, Method method, Duration interval,
       List<PunctuateArgSupplier<K, V, T, Object>> argSuppliers) {
     return ProcessorPunctuate.<K, V, T>builder()
         .interval(interval)
         .method((timestamp, taskContext) -> {
           Object[] args = argSuppliers.stream().map(as -> as.arg(timestamp, taskContext)).toArray();
           try {
-            method.invoke(transformerRef, args);
+            method.invoke(statefulTransformerRef, args);
           } catch (IllegalAccessException | InvocationTargetException e) {
             log.error("Was not able to invoke punctuate method {}#{}",
-                transformerRef.getClass().getName(), method.getName(), e);
+                statefulTransformerRef.getClass().getName(), method.getName(), e);
           }
         })
         .build();

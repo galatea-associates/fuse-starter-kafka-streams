@@ -24,7 +24,6 @@ public class StreamController extends BaseStreamingService {
   private final Topic<InputTradeMsgKey, InputTradeMsgValue> inputTradeTopic;
   private final Topic<TradeMsgKey, TradeMsgValue> normalizedTradeTopic;
   private final TradeTransformer tradeTransformer;
-//private final TransformerRef<InputTradeMsgKey, InputTradeMsgValue, TradeMsgKey, TradeMsgValue, Object> tradeTransformer2;
   private final GlobalStoreRef<SecurityIsinMsgKey, SecurityMsgValue> securityStoreRef;
 
   protected Topology buildTopology() {

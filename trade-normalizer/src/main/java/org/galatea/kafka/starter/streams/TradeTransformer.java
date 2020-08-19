@@ -10,6 +10,7 @@ import org.galatea.kafka.starter.messaging.security.SecurityMsgValue;
 import org.galatea.kafka.starter.messaging.streams.GlobalStore;
 import org.galatea.kafka.starter.messaging.streams.GlobalStoreRef;
 import org.galatea.kafka.starter.messaging.streams.ProcessorTaskContext;
+import org.galatea.kafka.starter.messaging.streams.TaskStore;
 import org.galatea.kafka.starter.messaging.streams.TaskStoreRef;
 import org.galatea.kafka.starter.messaging.streams.TransformerRef;
 import org.galatea.kafka.starter.messaging.streams.annotate.PunctuateMethod;
@@ -17,18 +18,16 @@ import org.galatea.kafka.starter.messaging.trade.TradeMsgKey;
 import org.galatea.kafka.starter.messaging.trade.TradeMsgValue;
 import org.galatea.kafka.starter.messaging.trade.input.InputTradeMsgKey;
 import org.galatea.kafka.starter.messaging.trade.input.InputTradeMsgValue;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class TradeTransformer extends
-    TransformerRef<InputTradeMsgKey, InputTradeMsgValue, TradeMsgKey, TradeMsgValue, Object> {
+    TransformerRef<InputTradeMsgKey, InputTradeMsgValue, TradeMsgKey, TradeMsgValue> {
 
   private final GlobalStoreRef<SecurityIsinMsgKey, SecurityMsgValue> securityStoreRef;
-  @Value("${punctuate.interval}")
-  private String something;
+  private final TaskStoreRef<InputTradeMsgKey, InputTradeMsgValue> tradeStoreRef;
 
   @Override
   public KeyValue<TradeMsgKey, TradeMsgValue> transform(InputTradeMsgKey key,
@@ -36,6 +35,10 @@ public class TradeTransformer extends
     log.info("{} Processing {} | {}", context.taskId(), key, value);
     GlobalStore<SecurityIsinMsgKey, SecurityMsgValue> securityStore = context
         .store(securityStoreRef);
+    TaskStore<InputTradeMsgKey, InputTradeMsgValue> store = context.store(tradeStoreRef);
+    Optional<InputTradeMsgValue> existingTrade = store.get(key);
+    existingTrade.ifPresent(trade -> log.info("Existing trade: {}", trade));
+    store.put(key, value);
 
     Optional<SecurityMsgValue> securityMsg = securityStore
         .get(SecurityIsinMsgKey.newBuilder().setIsin(value.getIsin()).build());

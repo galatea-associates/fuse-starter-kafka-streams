@@ -4,6 +4,7 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
+import lombok.Setter;
 import lombok.ToString;
 import org.apache.kafka.common.serialization.Serde;
 import org.galatea.kafka.starter.messaging.streams.util.RetentionPolicy;
@@ -14,6 +15,10 @@ public class TaskStoreRef<K,V> extends StoreRef<K,V> {
 
   @Getter(value = AccessLevel.PACKAGE)
   private final RetentionPolicy<K,V> retentionPolicy;
+
+  @Getter(AccessLevel.PACKAGE)
+  @Setter(AccessLevel.PACKAGE)
+  private boolean created = false;
 
   @Builder
   public TaskStoreRef(String name, Serde<K> keySerde,

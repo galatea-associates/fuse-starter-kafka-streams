@@ -10,7 +10,7 @@ import org.apache.kafka.streams.state.KeyValueStore;
 import org.galatea.kafka.starter.messaging.streams.util.RetentionPolicy;
 
 @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
-class TaskStore<K, V> implements KafkaStreamsStore<K, V> {
+public class TaskStore<K, V> implements KafkaStreamsStore<K, V> {
 
   private final KeyValueStore<K, V> inner;
   private final RetentionPolicy<K, V> retentionPolicy;
