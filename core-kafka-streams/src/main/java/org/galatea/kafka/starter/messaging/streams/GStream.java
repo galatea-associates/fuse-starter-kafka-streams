@@ -12,6 +12,8 @@ import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Named;
 import org.apache.kafka.streams.kstream.Produced;
 import org.galatea.kafka.starter.messaging.Topic;
+import org.galatea.kafka.starter.messaging.streams.domain.SubKeyAndValue;
+import org.galatea.kafka.starter.messaging.streams.util.KeyMapper;
 import org.galatea.kafka.starter.messaging.streams.util.KeyValueMapper;
 import org.galatea.kafka.starter.messaging.streams.util.PeekAction;
 import org.galatea.kafka.starter.messaging.streams.util.RetentionPolicy;
@@ -105,6 +107,13 @@ public class GStream<K, V> {
       }
     });
   }
+
+  public <K1> SubKeyedStream<K, K1, V> subKey(KeyMapper<K, K1, V> keyMapper) {
+    GStream<K, SubKeyAndValue<K1, V>> stream = mapValues(
+        (key, value, context) -> new SubKeyAndValue<>(keyMapper.map(key, value), value));
+    return new SubKeyedStream<>(stream, builder);
+  }
+
 
   public GStream<K, V> repartition(Topic<K, V> topic) {
     KStream<K, V> postRepartition = this
