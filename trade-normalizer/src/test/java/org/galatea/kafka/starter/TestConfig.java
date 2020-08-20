@@ -11,18 +11,13 @@ import java.util.HashMap;
 import java.util.Map;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.common.serialization.Serde;
-import org.galatea.kafka.starter.config.MessagingConfig;
 import org.galatea.kafka.starter.messaging.Topic;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Import;
-
-;
 
 @Configuration
-@Import(MessagingConfig.class)
 public class TestConfig {
 
   private SchemaRegistryClient mockRegistryClient = new MockSchemaRegistryClient();

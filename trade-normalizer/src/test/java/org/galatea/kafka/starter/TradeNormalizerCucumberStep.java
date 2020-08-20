@@ -15,13 +15,12 @@ import org.galatea.kafka.starter.messaging.KafkaStreamsStarter;
 import org.galatea.kafka.starter.messaging.Topic;
 import org.galatea.kafka.starter.messaging.security.SecurityIsinMsgKey;
 import org.galatea.kafka.starter.messaging.security.SecurityMsgValue;
+import org.galatea.kafka.starter.messaging.streams.GStreamBuilder;
 import org.galatea.kafka.starter.messaging.trade.TradeMsgKey;
 import org.galatea.kafka.starter.messaging.trade.TradeMsgValue;
 import org.galatea.kafka.starter.messaging.trade.input.InputTradeMsgKey;
 import org.galatea.kafka.starter.messaging.trade.input.InputTradeMsgValue;
 import org.galatea.kafka.starter.streams.StreamController;
-import org.galatea.kafka.starter.streams.StreamControllerTestHelper;
-import org.galatea.kafka.starter.streams.TradeTransformer;
 import org.galatea.kafka.starter.testing.TopologyTester;
 import org.galatea.kafka.starter.testing.avro.AvroPostProcessor;
 import org.junit.Ignore;
@@ -29,11 +28,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.test.context.ContextConfiguration;
 
 @Slf4j
 @SpringBootTest
-@ContextConfiguration(classes = {TestConfig.class, StreamController.class, TradeTransformer.class})
 @EnableAutoConfiguration
 @Ignore   // Without this, IntelliJ will try to run this class, find no tests, and error
 public class TradeNormalizerCucumberStep {
@@ -49,7 +46,7 @@ public class TradeNormalizerCucumberStep {
   @Autowired
   private Topic<TradeMsgKey, TradeMsgValue> normalizedTradeTopic;
   @MockBean
-  private KafkaStreamsStarter mockStreamsStarter;   // mock KafkaStreamsStarter, so
+  private KafkaStreamsStarter mockStreamsStarter;   // mock KafkaStreamsStarter, so the real bean won't try to start KafkaStreams
 
   private static TopologyTester tester;
 
@@ -57,7 +54,7 @@ public class TradeNormalizerCucumberStep {
   public void setup(Scenario scenario) {
 
     if (tester == null) {
-      Topology topology = StreamControllerTestHelper.buildTopology(controller);
+      Topology topology = controller.buildTopology(new GStreamBuilder());
       tester = new TopologyTester(topology, properties.asProperties());
       tester.configureInputTopic(securityTopic, SecurityIsinMsgKey::new, SecurityMsgValue::new);
       tester.configureInputTopic(inputTradeTopic, InputTradeMsgKey::new, InputTradeMsgValue::new);

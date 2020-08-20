@@ -1,8 +1,11 @@
 package org.galatea.kafka.starter.messaging.streams;
 
 import java.util.Collection;
+import java.util.Collections;
 
 interface TaskStoreSupplier {
 
-  Collection<TaskStoreRef<?, ?>> taskStores();
+  default Collection<TaskStoreRef<?, ?>> taskStores() {
+    return Collections.emptyList();
+  }
 }
