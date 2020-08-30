@@ -1,8 +1,10 @@
 package org.galatea.kafka.starter.messaging.streams;
 
 import java.util.Collection;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,8 +14,6 @@ import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Named;
 import org.apache.kafka.streams.kstream.Produced;
 import org.galatea.kafka.starter.messaging.Topic;
-import org.galatea.kafka.starter.messaging.streams.domain.SubKeyAndValue;
-import org.galatea.kafka.starter.messaging.streams.util.KeyMapper;
 import org.galatea.kafka.starter.messaging.streams.util.KeyValueMapper;
 import org.galatea.kafka.starter.messaging.streams.util.PeekAction;
 import org.galatea.kafka.starter.messaging.streams.util.RetentionPolicy;
@@ -21,6 +21,7 @@ import org.galatea.kafka.starter.messaging.streams.util.ValueMapper;
 import org.galatea.kafka.starter.messaging.streams.util.ValueSubtractor;
 
 @Slf4j
+@SuppressWarnings("unused")
 @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 public class GStream<K, V> {
 
@@ -57,9 +58,9 @@ public class GStream<K, V> {
     createNeededStores(taskStores);
 
     String[] storeNames = taskStores.stream().map(StoreRef::getName).toArray(String[]::new);
-    return new GStream<>(
-        inner.transform(() -> new ConfiguredTransformer<>(transformer), storeNames),
-        builder, keyDirty, keySerde, null);
+    KStream<K, V1> outStream = inner
+        .transform(() -> new ConfiguredTransformer<>(transformer), storeNames);
+    return new GStream<>(outStream, builder, keyDirty, keySerde, null);
   }
 
   public <V1> GStream<K, V1> mapValues(ValueMapper<K, V, V1> mapper) {
@@ -73,12 +74,25 @@ public class GStream<K, V> {
         Named.as("map-" + mapTransformerCounter.incrementAndGet())), builder, true, null, null);
   }
 
-  public GStream<K, V> delta(Serde<K> keySerde, Serde<V> valueSerde,
-      ValueSubtractor<K, V> subtractor,
-      RetentionPolicy<K, V> retention) {
+  public GStream<K, V> delta(ValueSubtractor<K, V> subtractor, RetentionPolicy<K, V> retention) {
+    return delta(subtractor, retention, null);
+  }
+
+  public GStream<K, V> delta(ValueSubtractor<K, V> subtractor, RetentionPolicy<K, V> retention,
+      String name) {
     long deltaId = deltaCounter.incrementAndGet();
+    String deltaName;
+    if (name != null) {
+      deltaName = String.format("delta-%d-%s", deltaId, name);
+    } else {
+      deltaName = String.format("delta-%d", deltaId);
+    }
+
+    requireKeySerde();
+    requireValueSerde();
+
     TaskStoreRef<K, V> outerStoreRef = TaskStoreRef.<K, V>builder()
-        .name("delta-" + deltaId)
+        .name(deltaName)
         .keySerde(keySerde)
         .valueSerde(valueSerde)
         .retentionPolicy(retention)
@@ -89,6 +103,10 @@ public class GStream<K, V> {
 
       @Override
       public KeyValue<K, V> transform(K key, V value, ProcessorTaskContext<K, V, Object> context) {
+        if (!retention.shouldKeep(key, value, context)) {
+          log.info("Delta {} Filtered out record {} | {}", deltaName, key, value);
+          return null;
+        }
         TaskStore<K, V> store = context.store(innerStoreRef);
         Optional<V> existingValue = store.get(key);
         store.put(key, value);
@@ -108,12 +126,30 @@ public class GStream<K, V> {
     });
   }
 
-  public <K1> SubKeyedStream<K, K1, V> subKey(KeyMapper<K, K1, V> keyMapper) {
-    GStream<K, SubKeyAndValue<K1, V>> stream = mapValues(
-        (key, value, context) -> new SubKeyAndValue<>(keyMapper.map(key, value), value));
-    return new SubKeyedStream<>(stream, builder);
+  public GStream<K, V> withSerdes(Serde<K> keySerde, Serde<V> valueSerde) {
+    return new GStream<>(inner, builder, keyDirty, keySerde, valueSerde);
   }
 
+  private void requireValueSerde() {
+    Objects.requireNonNull(valueSerde, String.format("ValueSerde is not defined due to an operator "
+            + "that changed value type. Use %s#withSerdes before ValueSerde is required",
+        getClass().getSimpleName()));
+  }
+
+  private void requireKeySerde() {
+    Objects.requireNonNull(keySerde, String.format("KeySerde is not defined due to an operator "
+            + "that changed key type. Use %s#withSerdes before KeySerde is required",
+        getClass().getSimpleName()));
+  }
+
+  public <K1, V1> GStream<K1, V1> asKStream(Function<KStream<K, V>, KStream<K1, V1>> useRawStream) {
+    return new GStream<>(useRawStream.apply(inner), builder, keyDirty, null, null);
+  }
+
+  public <K1, V1> GStream<K1, V1> mapWithRepartition(Topic<K1, V1> topic,
+      KeyValueMapper<K, V, K1, V1> mapper) {
+    return map(mapper).repartition(topic);
+  }
 
   public GStream<K, V> repartition(Topic<K, V> topic) {
     KStream<K, V> postRepartition = this

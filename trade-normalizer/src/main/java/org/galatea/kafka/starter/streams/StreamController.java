@@ -30,14 +30,6 @@ public class StreamController implements TopologyProvider {
     builder.addGlobalStore(securityStoreRef);
 
     builder.stream(inputTradeTopic)
-        .delta(inputTradeTopic.getKeySerde(), inputTradeTopic.getValueSerde(),
-            (key, existingValue, newValue, context) -> InputTradeMsgValue.newBuilder()
-                .setTradeId(newValue.getTradeId())
-                .setIsin(newValue.getIsin())
-                .setCounterparty(newValue.getCounterparty())
-                .setPortfolio(newValue.getPortfolio())
-                .setQty(newValue.getQty() - existingValue.getQty())
-                .build(), (key, value, context) -> true)
         .transform(tradeTransformer)
         .to(normalizedTradeTopic);
 
