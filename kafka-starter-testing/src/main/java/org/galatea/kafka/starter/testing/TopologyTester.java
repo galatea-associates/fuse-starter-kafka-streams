@@ -29,6 +29,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
+import org.apache.kafka.streams.StoreQueryParameters;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.TestInputTopic;
 import org.apache.kafka.streams.TestOutputTopic;
@@ -46,6 +47,7 @@ import org.springframework.util.FileSystemUtils;
 import org.unitils.reflectionassert.ReflectionComparatorMode;
 
 @Slf4j
+@SuppressWarnings("unused")
 public class TopologyTester implements Closeable {
 
   @Getter
@@ -65,6 +67,9 @@ public class TopologyTester implements Closeable {
    */
   public KafkaStreams mockStreams() {
     KafkaStreams mockStreams = mock(KafkaStreams.class);
+    when(mockStreams.store(any(StoreQueryParameters.class)))
+        .thenAnswer(invocationOnMock -> driver.getKeyValueStore(
+            ((StoreQueryParameters<Object>) invocationOnMock.getArgument(0)).storeName()));
     when(mockStreams.store(any(String.class), any(QueryableStoreType.class)))
         .thenAnswer(invocationOnMock -> driver.getKeyValueStore(invocationOnMock.getArgument(0)));
     return mockStreams;
