@@ -1,7 +1,9 @@
-core-kafka-streams.kafka-streams:
-  application.id: normalizer
-  bootstrap.servers: localhost:9092
-  state.dir: ./target/stream_state_test
+kafka:
+  global:
+    bootstrap.servers: localhost:9092
+  streams:
+    application.id: normalizer
+    state.dir: ./target/stream_state_test
 
 punctuate.interval: PT30S
 messaging:

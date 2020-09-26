@@ -6,6 +6,7 @@ import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.Topology;
 import org.apache.kafka.streams.kstream.Consumed;
+import org.apache.kafka.streams.state.Stores;
 import org.apache.kafka.streams.state.internals.KeyValueStoreBuilder;
 import org.apache.kafka.streams.state.internals.RocksDbKeyValueBytesStoreSupplier;
 import org.galatea.kafka.starter.messaging.Topic;
@@ -53,8 +54,9 @@ public class GStreamBuilder {
   }
 
   <K, V> void addStateStore(TaskStoreRef<K, V> storeRef) {
-    inner.addStateStore(
-        new KeyValueStoreBuilder<>(new RocksDbKeyValueBytesStoreSupplier(storeRef.getName(), false),
-            storeRef.getKeySerde(), storeRef.getValueSerde(), Time.SYSTEM));
+    log.info("Adding state store {} to inner topology", storeRef.getName());
+    inner.addStateStore(Stores
+        .keyValueStoreBuilder(Stores.persistentKeyValueStore(storeRef.getName()),
+            storeRef.getKeySerde(), storeRef.getValueSerde()));
   }
 }

@@ -1,6 +1,5 @@
 package org.galatea.kafka.starter.streams;
 
-import java.util.Collection;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +13,7 @@ import org.galatea.kafka.starter.messaging.streams.TaskStore;
 import org.galatea.kafka.starter.messaging.streams.TaskStoreRef;
 import org.galatea.kafka.starter.messaging.streams.TransformerRef;
 import org.galatea.kafka.starter.messaging.streams.annotate.PunctuateMethod;
+import org.galatea.kafka.starter.messaging.streams.annotate.TaskStoreField;
 import org.galatea.kafka.starter.messaging.trade.TradeMsgKey;
 import org.galatea.kafka.starter.messaging.trade.TradeMsgValue;
 import org.galatea.kafka.starter.messaging.trade.input.InputTradeMsgKey;
@@ -27,6 +27,7 @@ public class TradeTransformer extends
     TransformerRef<InputTradeMsgKey, InputTradeMsgValue, TradeMsgKey, TradeMsgValue> {
 
   private final GlobalStoreRef<SecurityIsinMsgKey, SecurityMsgValue> securityStoreRef;
+  @TaskStoreField
   private final TaskStoreRef<InputTradeMsgKey, InputTradeMsgValue> tradeStoreRef;
 
   @Override
@@ -68,10 +69,5 @@ public class TradeTransformer extends
   @PunctuateMethod("PT30s")
   public void logAnother() {
     log.info("Running shorter punctuate");
-  }
-
-  @Override
-  public Collection<TaskStoreRef<?, ?>> taskStores() {
-    return null;
   }
 }

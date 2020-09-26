@@ -10,9 +10,9 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.specific.SpecificRecord;
 import org.apache.kafka.streams.Topology;
-import org.galatea.kafka.starter.messaging.KafkaStreamsConfig;
 import org.galatea.kafka.starter.messaging.KafkaStreamsStarter;
 import org.galatea.kafka.starter.messaging.Topic;
+import org.galatea.kafka.starter.messaging.config.KafkaConfig;
 import org.galatea.kafka.starter.messaging.security.SecurityIsinMsgKey;
 import org.galatea.kafka.starter.messaging.security.SecurityMsgValue;
 import org.galatea.kafka.starter.messaging.streams.GStreamBuilder;
@@ -28,17 +28,19 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.ActiveProfiles;
 
 @Slf4j
 @SpringBootTest
 @EnableAutoConfiguration
+@ActiveProfiles("test")
 @Ignore   // Without this, IntelliJ will try to run this class, find no tests, and error
 public class TradeNormalizerCucumberStep {
 
   @Autowired
   private StreamController controller;
   @Autowired
-  private KafkaStreamsConfig properties;
+  private KafkaConfig config;
   @Autowired
   private Topic<InputTradeMsgKey, InputTradeMsgValue> inputTradeTopic;
   @Autowired
@@ -55,7 +57,7 @@ public class TradeNormalizerCucumberStep {
 
     if (tester == null) {
       Topology topology = controller.buildTopology(new GStreamBuilder());
-      tester = new TopologyTester(topology, properties.asProperties());
+      tester = new TopologyTester(topology, config.streamsProperties());
       tester.configureInputTopic(securityTopic, SecurityIsinMsgKey::new, SecurityMsgValue::new);
       tester.configureInputTopic(inputTradeTopic, InputTradeMsgKey::new, InputTradeMsgValue::new);
       tester.configureOutputTopic(normalizedTradeTopic, TradeMsgKey::new, TradeMsgValue::new);
