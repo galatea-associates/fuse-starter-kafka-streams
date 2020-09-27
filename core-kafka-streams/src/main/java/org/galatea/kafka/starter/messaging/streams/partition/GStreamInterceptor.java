@@ -34,18 +34,22 @@ public class GStreamInterceptor<K, V> implements ProducerInterceptor<K, V>,
 
   @Override
   public ProducerRecord<K, V> onSend(ProducerRecord<K, V> producerRecord) {
-    Iterator<Header> headers = producerRecord.headers()
-        .headers(ConfiguredHeaders.NEW_PARTITION_KEY.getKey()).iterator();
+    Headers headers = producerRecord.headers();
+    Iterator<Header> headerIter = headers.headers(ConfiguredHeaders.NEW_PARTITION_KEY.getKey())
+        .iterator();
     Integer assignPartition = producerRecord.partition();
-    if (headers.hasNext() && assignPartition == null) {
+    if (headerIter.hasNext() && assignPartition == null) {
       int partitions = numberPartitions(producerRecord.topic());
-      Header partKeyHeader = headers.next();
+      Header partKeyHeader = headerIter.next();
       String hashString = new String(partKeyHeader.value());
       int hashCode = hashString.hashCode();
 
       // handle negative hashCodes, since partition should always be >=0
       assignPartition = ((hashCode % partitions) + partitions) % partitions;
 
+      headers.remove(ConfiguredHeaders.USED_PARTITION_KEY.getKey());
+      headers.add(ConfiguredHeaders.USED_PARTITION_KEY.getKey(), partKeyHeader.value());
+      headers.remove(ConfiguredHeaders.NEW_PARTITION_KEY.getKey());
       log.debug("Assigning record to partition {} based on hashing string {}: {}", assignPartition,
           hashString, producerRecord);
     }
@@ -83,16 +87,6 @@ public class GStreamInterceptor<K, V> implements ProducerInterceptor<K, V>,
 
   @Override
   public ConsumerRecords<K, V> onConsume(ConsumerRecords<K, V> records) {
-    records.forEach(record -> {
-      Headers headers = record.headers();
-      Iterator<Header> iter = headers.headers(ConfiguredHeaders.NEW_PARTITION_KEY.getKey())
-          .iterator();
-      if (iter.hasNext()) {
-        headers.remove(ConfiguredHeaders.USED_PARTITION_KEY.getKey());
-        headers.add(ConfiguredHeaders.USED_PARTITION_KEY.getKey(), iter.next().value());
-        headers.remove(ConfiguredHeaders.NEW_PARTITION_KEY.getKey());
-      }
-    });
     return records;
   }
 
