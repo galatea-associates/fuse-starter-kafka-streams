@@ -1,0 +1,89 @@
+# For documentation on log4j2: https://logging.apache.org/log4j/2.x/manual/
+
+# For configuration details: springframework.guru/log4j-2-configuration-using-yaml
+# and: http://logging.apache.org/log4j/2.x/manual/configuration.html
+
+# Spring-boot seems to require a file named "log4j2.yml" to determine that we're using log4j2.
+
+Configuration:
+  name: Default
+
+  # Some properties so we're not tempted to hard-code anything below
+  Properties:
+    Property:
+      # Currently we are creating 3 application log files on startup, because there are three events
+      # during Spring Boot initialization which usually happen about a second apart which create
+      # new log files since the log file name below is formatted with seconds (HHmmss). We COULD
+      # mask this by removing seconds from this config, but it would still create multiple files if
+      # the JVM was started right as the minute changes. Not a big deal so we're leaving it for now.
+      - name: log-file-prefix
+        value: ${date:yyyyMMddHHmmss}.${sys:application.name}
+      - name: log-dir
+        value: ${sys:application.log-dir}
+      - name: log-archive-dir
+        value: "${sys:application.log-archive-root-dir}/%d{yyyyMMdd}"
+        # ending the zip-suffix with .gz will cause rolled logs to get gzipped
+      - name: zip-suffix
+        value: "%d{yyyyMMdd.HH}.%i.log.gz"
+        # Log throwables (exceptions) on one line, split by the pipe delimiter
+      - name: log-pattern
+        value: "%d{yyyy.MM.dd HH:mm:ss.SSS} [%t%X{StreamThread}] %-5level [%X{X-B3-TraceId}/%X{X-B3-SpanId}] %logger{1.} - %X{internal-request-id}%X{external-request-id}%msg%xThrowable{separator(|)}%n"
+
+  # Create some appenders
+  Appenders:
+
+    # Log to console.
+    Console:
+      name: Console
+      target: SYSTEM_OUT
+      PatternLayout:
+        Pattern: "%d{yyyy.MM.dd HH:mm:ss.SSS} [%t%X{StreamThread}] %-5level %logger{1.} - %X{internal-request-id}%X{external-request-id}%msg%n%xThrowable{separator(|)}"
+
+    # Log to a specific file.
+    # For details of configuration options, see: https://logging.apache.org/log4j/2.x/manual/appenders.html#RollingFileAppender
+    RollingFile:
+      - name: RollingFileAppender
+        filename: ${log-dir}/${log-file-prefix}.log
+        # Define where to put logs when rolling
+        filePattern: ${log-archive-dir}/${log-file-prefix}.${zip-suffix}
+        # Only create the log file when there's logs to put in it (no empty log files)
+        createOnDemand: true
+        # Define what the log output will look like
+        PatternLayout:
+          Pattern: ${log-pattern}
+        Policies:
+          # Logs should be rolled based on time. Rolled logs should be gz (defined by zip-suffix)
+          TimeBasedTriggeringPolicy:
+            # Interval is based on the 'most specific time unit in the date pattern' (in zip-suffix)
+            interval: 1
+            modulate: true
+          # Should also limit files based on size
+          SizeBasedTriggeringPolicy:
+            size: 1024 MB
+          # Also, roll on startup
+          OnStartupTriggeringPolicy: {}
+
+    Async:
+      - name: AsyncAppender
+        bufferSize: 50000
+        AppenderRef:
+          - ref: RollingFileAppender
+
+      - name: AsyncRestRequestAppender
+        bufferSize: 50000
+        AppenderRef:
+          - ref: RestRequestRollingFileAppender
+
+  Loggers:
+    # Define some defaults
+    Root:
+      level: info
+      AppenderRef:
+        - ref: AsyncAppender
+        - ref: Console
+
+    Logger:
+      # Turn off Spring auto-configuration debug-level logging because it adds a lot of noise to startup logs
+      # If Spring debug logging is off this isn't necessary
+      - name: org.springframework.boot.autoconfigure.logging.AutoConfigurationReportLoggingInitializer
+        level: info

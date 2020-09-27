@@ -10,6 +10,7 @@ import org.apache.kafka.streams.state.Stores;
 import org.apache.kafka.streams.state.internals.KeyValueStoreBuilder;
 import org.apache.kafka.streams.state.internals.RocksDbKeyValueBytesStoreSupplier;
 import org.galatea.kafka.starter.messaging.Topic;
+import org.galatea.kafka.starter.messaging.streams.GStream.StreamState;
 
 @Slf4j
 public class GStreamBuilder {
@@ -25,11 +26,16 @@ public class GStreamBuilder {
   private final StreamsBuilder inner;
 
   public <K, V> GStream<K, V> stream(Topic<K, V> topic) {
+    StreamState<K, V> newState = StreamState.<K, V>builder()
+        .keyDirty(false)
+        .keySerde(topic.getKeySerde())
+        .valueSerde(topic.getValueSerde())
+        .build();
     return new GStream<>(
         inner.stream(topic.getName(), Consumed.with(topic.getKeySerde(), topic.getValueSerde())),
-        this, false, topic.getKeySerde(), topic.getValueSerde())
-        .peek((k, v, c) -> log.info("{} Consumed [{}|{}] Key: {} Value: {}", c.taskId(),
-            className(k), className(v), k, v));
+        newState, this)
+        .peek((k, v, c) -> log
+            .info("Consumed [{}|{}] Key: {} Value: {}", className(k), className(v), k, v));
   }
 
   public <K, V> GStreamBuilder addGlobalStore(GlobalStoreRef<K, V> ref) {
@@ -54,7 +60,6 @@ public class GStreamBuilder {
   }
 
   <K, V> void addStateStore(TaskStoreRef<K, V> storeRef) {
-    log.info("Adding state store {} to inner topology", storeRef.getName());
     inner.addStateStore(Stores
         .keyValueStoreBuilder(Stores.persistentKeyValueStore(storeRef.getName()),
             storeRef.getKeySerde(), storeRef.getValueSerde()));

@@ -26,4 +26,8 @@ public abstract class StatefulTransformerRef<K, V, K1, V1, T> implements TaskSto
   public void close(ProcessorTaskContext<K1, V1, T> context) {
     // do nothing
   }
+
+  public String named() {
+    return null;
+  }
 }
