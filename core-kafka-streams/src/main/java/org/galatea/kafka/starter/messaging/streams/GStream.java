@@ -47,6 +47,11 @@ public class GStream<K, V> {
     return new GStream<>(transformValues(new PeekTransformerRef<>(action)).inner, state, builder);
   }
 
+  public GStream<K,V> repartitionWith(Function<K,String> keyExtractor, Topic<K,V> topic) {
+    return transform(new PartitionKeyInjectorTransformerRef<>(keyExtractor))
+        .repartition(topic);
+  }
+
   public <K1, V1, T> GStream<K1, V1> transform(
       StatefulTransformerRef<K, V, K1, V1, T> transformer) {
     Collection<TaskStoreRef<?, ?>> taskStores = TaskStoreUtil.getTaskStores(transformer);
