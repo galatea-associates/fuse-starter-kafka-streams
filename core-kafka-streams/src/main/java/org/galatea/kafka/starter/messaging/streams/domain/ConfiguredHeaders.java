@@ -3,7 +3,8 @@ package org.galatea.kafka.starter.messaging.streams.domain;
 import lombok.Getter;
 
 public enum ConfiguredHeaders {
-  PARTITION_KEY("PART_KEY");
+  NEW_PARTITION_KEY("PART_KEY"),
+  USED_PARTITION_KEY("PART_KEY_USED");
 
   @Getter
   private final String key;

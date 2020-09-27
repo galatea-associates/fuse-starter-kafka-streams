@@ -11,15 +11,21 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.consumer.ConsumerInterceptor;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.ProducerInterceptor;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.header.Header;
+import org.apache.kafka.common.header.Headers;
 import org.galatea.kafka.starter.messaging.KafkaStreamsAutoconfig;
 import org.galatea.kafka.starter.messaging.streams.domain.ConfiguredHeaders;
 
 @Slf4j
-public class GProducerInterceptor<K, V> implements ProducerInterceptor<K, V> {
+public class GStreamInterceptor<K, V> implements ProducerInterceptor<K, V>,
+    ConsumerInterceptor<K, V> {
 
   @Setter
   private static AdminClient kafkaAdminClient;
@@ -29,15 +35,18 @@ public class GProducerInterceptor<K, V> implements ProducerInterceptor<K, V> {
   @Override
   public ProducerRecord<K, V> onSend(ProducerRecord<K, V> producerRecord) {
     Iterator<Header> headers = producerRecord.headers()
-        .headers(ConfiguredHeaders.PARTITION_KEY.getKey()).iterator();
+        .headers(ConfiguredHeaders.NEW_PARTITION_KEY.getKey()).iterator();
     Integer assignPartition = producerRecord.partition();
     if (headers.hasNext() && assignPartition == null) {
       int partitions = numberPartitions(producerRecord.topic());
       Header partKeyHeader = headers.next();
       String hashString = new String(partKeyHeader.value());
       int hashCode = hashString.hashCode();
-      assignPartition = hashCode % partitions;
-      log.info("Assigning record to partition {} based on hashing string {}: {}", assignPartition,
+
+      // handle negative hashCodes, since partition should always be >=0
+      assignPartition = ((hashCode % partitions) + partitions) % partitions;
+
+      log.debug("Assigning record to partition {} based on hashing string {}: {}", assignPartition,
           hashString, producerRecord);
     }
     return new ProducerRecord<>(producerRecord.topic(), assignPartition, producerRecord.timestamp(),
@@ -70,6 +79,26 @@ public class GProducerInterceptor<K, V> implements ProducerInterceptor<K, V> {
   @Override
   public void onAcknowledgement(RecordMetadata recordMetadata, Exception e) {
     // do nothing
+  }
+
+  @Override
+  public ConsumerRecords<K, V> onConsume(ConsumerRecords<K, V> records) {
+    records.forEach(record -> {
+      Headers headers = record.headers();
+      Iterator<Header> iter = headers.headers(ConfiguredHeaders.NEW_PARTITION_KEY.getKey())
+          .iterator();
+      if (iter.hasNext()) {
+        headers.remove(ConfiguredHeaders.USED_PARTITION_KEY.getKey());
+        headers.add(ConfiguredHeaders.USED_PARTITION_KEY.getKey(), iter.next().value());
+        headers.remove(ConfiguredHeaders.NEW_PARTITION_KEY.getKey());
+      }
+    });
+    return records;
+  }
+
+  @Override
+  public void onCommit(Map<TopicPartition, OffsetAndMetadata> offsets) {
+
   }
 
   @Override

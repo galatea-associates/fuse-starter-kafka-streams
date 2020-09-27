@@ -15,8 +15,8 @@ public class PartitionKeyInjectorTransformerRef<K, V> extends TransformerRef<K, 
   public KeyValue<K, V> transform(K key, V value, ProcessorTaskContext<K, V, Object> context) {
     String partitionKey = keyExtractor.apply(key);
     Headers headers = context.headers();
-    headers.remove(ConfiguredHeaders.PARTITION_KEY.getKey());
-    headers.add(ConfiguredHeaders.PARTITION_KEY.getKey(), partitionKey.getBytes());
+    headers.remove(ConfiguredHeaders.NEW_PARTITION_KEY.getKey());
+    headers.add(ConfiguredHeaders.NEW_PARTITION_KEY.getKey(), partitionKey.getBytes());
     return KeyValue.pair(key, value);
   }
 }

@@ -47,7 +47,7 @@ public class GStream<K, V> {
     return new GStream<>(transformValues(new PeekTransformerRef<>(action)).inner, state, builder);
   }
 
-  public GStream<K,V> repartitionWith(Function<K,String> keyExtractor, Topic<K,V> topic) {
+  public GStream<K, V> repartitionWith(Function<K, String> keyExtractor, Topic<K, V> topic) {
     return transform(new PartitionKeyInjectorTransformerRef<>(keyExtractor))
         .repartition(topic);
   }
@@ -159,8 +159,8 @@ public class GStream<K, V> {
         .build();
     return new GStream<>(postRepartition, newState, builder)
         .peek((k, v, c) -> log
-            .info("Consumed Repartition [{}|{}] Key: {} Value: {}", className(k), className(v), k,
-                v));
+            .info("{} Consumed Repartition [{}|{}] Key: {} Value: {}", c.taskId(), className(k),
+                className(v), k, v));
   }
 
   public void to(Topic<K, V> topic) {

@@ -7,13 +7,12 @@ import org.apache.kafka.clients.admin.KafkaAdminClient;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
-import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.Topology;
 import org.galatea.kafka.starter.messaging.config.InternalKafkaConfig;
 import org.galatea.kafka.starter.messaging.config.KafkaConfig;
 import org.galatea.kafka.starter.messaging.streams.GStreamBuilder;
 import org.galatea.kafka.starter.messaging.streams.TopologyProvider;
-import org.galatea.kafka.starter.messaging.streams.partition.GProducerInterceptor;
+import org.galatea.kafka.starter.messaging.streams.partition.GStreamInterceptor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -45,7 +44,7 @@ public class KafkaStreamsAutoconfig {
 
   @Bean
   public Object setInterceptorAdminClient(AdminClient kafkaAdminClient) {
-    GProducerInterceptor.setKafkaAdminClient(kafkaAdminClient);
+    GStreamInterceptor.setKafkaAdminClient(kafkaAdminClient);
     return new Object();
   }
 
@@ -58,15 +57,14 @@ public class KafkaStreamsAutoconfig {
     addProducerInterceptor(props);
     Topology topology = topologyProvider.buildTopology(new GStreamBuilder(new StreamsBuilder()));
     log.info("{}", topology.describe());
-    return new KafkaStreams(topology, kafkaConfig.streamsProperties());
+    return new KafkaStreams(topology, props);
   }
 
   private void addProducerInterceptor(Properties props) {
-    String interceptorConfigKey = StreamsConfig
-        .producerPrefix(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG);
+    String interceptorConfigKey = ProducerConfig.INTERCEPTOR_CLASSES_CONFIG;
     String configValue = props.getProperty(interceptorConfigKey);
     configValue = configValue != null ? "," + configValue : "";
-    configValue = GProducerInterceptor.class.getName() + configValue;
+    configValue = GStreamInterceptor.class.getName() + configValue;
     props.put(interceptorConfigKey, configValue);
   }
 

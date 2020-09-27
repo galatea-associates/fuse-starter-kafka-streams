@@ -7,6 +7,7 @@ protocol Simple {
   /** Message key for trade received from external system */
   record InputTradeMsgKey {
     string tradeId;
+    string isin;
   }
 
   /** Message value for trade received from external system */

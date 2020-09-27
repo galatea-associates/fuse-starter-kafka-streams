@@ -69,11 +69,6 @@ Configuration:
         AppenderRef:
           - ref: RollingFileAppender
 
-      - name: AsyncRestRequestAppender
-        bufferSize: 50000
-        AppenderRef:
-          - ref: RestRequestRollingFileAppender
-
   Loggers:
     # Define some defaults
     Root:

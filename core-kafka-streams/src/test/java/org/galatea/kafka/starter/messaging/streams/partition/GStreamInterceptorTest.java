@@ -27,10 +27,10 @@ import org.junit.Before;
 import org.junit.Test;
 import org.mockito.stubbing.Answer;
 
-public class GProducerInterceptorTest {
+public class GStreamInterceptorTest {
 
   private AdminClient adminClient;
-  private GProducerInterceptor<Object, Object> interceptor;
+  private GStreamInterceptor<Object, Object> interceptor;
 
   @Before
   public void setup() {
@@ -49,9 +49,9 @@ public class GProducerInterceptorTest {
           return describeMock;
         });
 
-    GProducerInterceptor.setKafkaAdminClient(null);
-    GProducerInterceptor.getTopicPartitions().clear();
-    interceptor = new GProducerInterceptor<>();
+    GStreamInterceptor.setKafkaAdminClient(null);
+    GStreamInterceptor.getTopicPartitions().clear();
+    interceptor = new GStreamInterceptor<>();
   }
 
   @Test
@@ -64,7 +64,7 @@ public class GProducerInterceptorTest {
 
   @Test
   public void adminClientSet_recordWithoutPartitionKey() {
-    GProducerInterceptor.setKafkaAdminClient(adminClient);
+    GStreamInterceptor.setKafkaAdminClient(adminClient);
     ProducerRecord<Object, Object> record = interceptor
         .onSend(new ProducerRecord<>("topic", "test", "one"));
 
@@ -74,7 +74,7 @@ public class GProducerInterceptorTest {
   @Test(expected = RuntimeException.class)
   public void adminClientNotSet_recordWithPartitionKey() {
     Collection<Header> headers = new LinkedList<>();
-    headers.add(new RecordHeader(ConfiguredHeaders.PARTITION_KEY.getKey(), "key".getBytes()));
+    headers.add(new RecordHeader(ConfiguredHeaders.NEW_PARTITION_KEY.getKey(), "key".getBytes()));
 
     // when
     interceptor.onSend(new ProducerRecord<>("topic", null, "test", "one", headers));
@@ -82,9 +82,9 @@ public class GProducerInterceptorTest {
 
   @Test
   public void adminClientSet_recordWithPartitionKey() {
-    GProducerInterceptor.setKafkaAdminClient(adminClient);
+    GStreamInterceptor.setKafkaAdminClient(adminClient);
     Collection<Header> headers = new LinkedList<>();
-    headers.add(new RecordHeader(ConfiguredHeaders.PARTITION_KEY.getKey(), "key".getBytes()));
+    headers.add(new RecordHeader(ConfiguredHeaders.NEW_PARTITION_KEY.getKey(), "key".getBytes()));
 
     // when
     ProducerRecord<Object, Object> record = interceptor
@@ -96,9 +96,9 @@ public class GProducerInterceptorTest {
 
   @Test
   public void recordWithPartitionKey_PreassignedPartition() {
-    GProducerInterceptor.setKafkaAdminClient(adminClient);
+    GStreamInterceptor.setKafkaAdminClient(adminClient);
     Collection<Header> headers = new LinkedList<>();
-    headers.add(new RecordHeader(ConfiguredHeaders.PARTITION_KEY.getKey(), "key".getBytes()));
+    headers.add(new RecordHeader(ConfiguredHeaders.NEW_PARTITION_KEY.getKey(), "key".getBytes()));
 
     // when
     ProducerRecord<Object, Object> record = interceptor
@@ -110,7 +110,7 @@ public class GProducerInterceptorTest {
 
   @Test
   public void recordWithoutPartitionKey_PreassignedPartition() {
-    GProducerInterceptor.setKafkaAdminClient(adminClient);
+    GStreamInterceptor.setKafkaAdminClient(adminClient);
     // when
     ProducerRecord<Object, Object> record = interceptor
         .onSend(new ProducerRecord<>("topic", 7, "test", "one"));
@@ -121,7 +121,7 @@ public class GProducerInterceptorTest {
 
   @Test
   public void recordWithoutPartitionKey_WithOtherHeaders() {
-    GProducerInterceptor.setKafkaAdminClient(adminClient);
+    GStreamInterceptor.setKafkaAdminClient(adminClient);
     Collection<Header> headers = new LinkedList<>();
     headers.add(new RecordHeader("randomKey", "key".getBytes()));
 
@@ -135,10 +135,10 @@ public class GProducerInterceptorTest {
 
   @Test
   public void recordWithPartitionKey_WithOtherHeaders() {
-    GProducerInterceptor.setKafkaAdminClient(adminClient);
+    GStreamInterceptor.setKafkaAdminClient(adminClient);
     Collection<Header> headers = new LinkedList<>();
     headers.add(new RecordHeader("randomKey", "key".getBytes()));
-    headers.add(new RecordHeader(ConfiguredHeaders.PARTITION_KEY.getKey(), "key".getBytes()));
+    headers.add(new RecordHeader(ConfiguredHeaders.NEW_PARTITION_KEY.getKey(), "key".getBytes()));
 
     // when
     ProducerRecord<Object, Object> record = interceptor
@@ -150,10 +150,10 @@ public class GProducerInterceptorTest {
 
   @Test
   public void recordWithMultiplePartitionKey_useFirstAdded() {
-    GProducerInterceptor.setKafkaAdminClient(adminClient);
+    GStreamInterceptor.setKafkaAdminClient(adminClient);
     Collection<Header> headers = new LinkedList<>();
-    headers.add(new RecordHeader(ConfiguredHeaders.PARTITION_KEY.getKey(), "key1".getBytes()));
-    headers.add(new RecordHeader(ConfiguredHeaders.PARTITION_KEY.getKey(), "key2".getBytes()));
+    headers.add(new RecordHeader(ConfiguredHeaders.NEW_PARTITION_KEY.getKey(), "key1".getBytes()));
+    headers.add(new RecordHeader(ConfiguredHeaders.NEW_PARTITION_KEY.getKey(), "key2".getBytes()));
 
     // when
     ProducerRecord<Object, Object> record = interceptor
