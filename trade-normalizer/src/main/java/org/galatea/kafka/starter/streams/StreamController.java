@@ -7,7 +7,6 @@ import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.Topology;
 import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.ForeachAction;
-import org.apache.kafka.streams.kstream.GlobalKTable;
 import org.apache.kafka.streams.kstream.Materialized;
 import org.apache.kafka.streams.kstream.Produced;
 import org.apache.kafka.streams.kstream.Transformer;
@@ -25,6 +24,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @RequiredArgsConstructor
 @Component
+@SuppressWarnings("all")
 public class StreamController extends BaseStreamingService {
 
   private final Topic<InputTradeMsgKey, InputTradeMsgValue> inputTradeTopic;
@@ -35,9 +35,9 @@ public class StreamController extends BaseStreamingService {
 
     StreamsBuilder builder = new StreamsBuilder();
 
-    GlobalKTable<SecurityIsinMsgKey, SecurityMsgValue> securityTable = builder
-        .globalTable(securityTopic.getName(), consumedWith(securityTopic),
-            Materialized.as("security-table"));
+    // create a global table named "security-table" based on the contents of the security topic
+    builder.globalTable(securityTopic.getName(), consumedWith(securityTopic),
+        Materialized.as("security-table"));
 
     builder
 
@@ -57,6 +57,8 @@ public class StreamController extends BaseStreamingService {
             new TransformerSupplier<InputTradeMsgKey, InputTradeMsgValue, KeyValue<TradeMsgKey, TradeMsgValue>>() {
               @Override
               public Transformer<InputTradeMsgKey, InputTradeMsgValue, KeyValue<TradeMsgKey, TradeMsgValue>> get() {
+
+                // NormalizerTransformer needs to know the name of the security table
                 return new NormalizerTransformer("security-table");
               }
             })
