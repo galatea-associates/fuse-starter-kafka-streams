@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.regex.Pattern;
-import javafx.util.Pair;
+import org.galatea.kafka.starter.Pair;
 
 public class ConversionUtil {
 
