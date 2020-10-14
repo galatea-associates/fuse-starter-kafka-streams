@@ -32,7 +32,7 @@ public class NormalizerTransformer implements
   public KeyValue<TradeMsgKey, TradeMsgValue> transform(InputTradeMsgKey key,
       InputTradeMsgValue value) {
 
-    SecurityIsinMsgKey securityIsinKey = SecurityIsinMsgKey.newBuilder().setIsin(key.getIsin())
+    SecurityIsinMsgKey securityIsinKey = SecurityIsinMsgKey.newBuilder().setIsin(value.getIsin())
         .build();
 
     // get the security information from the store

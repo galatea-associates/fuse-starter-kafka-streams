@@ -406,14 +406,14 @@ public class TopologyTester implements Closeable {
       Class<?> forClass = entry.getKey();
       RecordPostProcessor<?> processor = entry.getValue();
       if (processedKey == null && forClass.isInstance(record.key)) {
-        log.info("Post-processing key {}", record.key);
+//        log.info("Post-processing key {}", record.key);
         processedKey = useProcessor((RecordPostProcessor<K>) processor, record.key);
-        log.info("Processed key: {}", processedKey);
+//        log.info("Processed key: {}", processedKey);
       }
       if (processedValue == null && forClass.isInstance(record.value)) {
-        log.info("Post-processing key {}", record.value);
+//        log.info("Post-processing key {}", record.value);
         processedValue = useProcessor((RecordPostProcessor<V>) processor, record.value);
-        log.info("Processed value: {}", processedValue);
+//        log.info("Processed value: {}", processedValue);
       }
       if (processedKey != null && processedValue != null) {
         break;
