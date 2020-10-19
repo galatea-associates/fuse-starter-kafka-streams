@@ -23,6 +23,19 @@ import org.galatea.kafka.starter.messaging.streams.util.ValueMapper;
 @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 public class GStream<K, V> {
 
+  // TODO:
+  //  TransformerRef should be interface
+  //  punctuates are a collection
+  //  stateStores are a collection
+  //  TaskStoreRef configurable for in-memory or persistent, based on yml
+  //  Tests use in-memory
+  //  replace all DSL functions with GStream methods
+  //  anything that contains K,V should implement KeyValueType<K,V> interface
+  //  KafkaClusterManager to create and maintain topics
+  //  module mode that does a streams reset instead of starting up streams
+  //  replace GStreamInterceptor with GPartitioner, which is configured for the streams producer
+  //  make core-kafka-streams spring-agnostic - make new core-kafka-streams-spring that adds spring
+
   @Value
   @Builder(toBuilder = true)
   static class StreamState<K1, V1> {
