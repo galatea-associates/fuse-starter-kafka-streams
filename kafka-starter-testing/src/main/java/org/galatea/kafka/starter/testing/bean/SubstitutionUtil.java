@@ -16,10 +16,11 @@ public class SubstitutionUtil implements BeanPostProcessor {
     return this;
   }
 
+  @SuppressWarnings("unchecked")
   @Override
   public Object postProcessBeforeInitialization(Object bean, String beanName)
       throws BeansException {
-    SpringBeanData beanData = new SpringBeanData(beanName, bean);
+    SpringBeanData<?> beanData = new SpringBeanData<>(beanName, bean);
     for (ReplacementRule rule : rules) {
       if (rule.getPredicate().test(beanData)) {
         return rule.getSupplier().get(beanData);

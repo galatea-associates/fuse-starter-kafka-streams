@@ -4,6 +4,7 @@ import java.util.Iterator;
 import lombok.experimental.Delegate;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.streams.processor.ProcessorContext;
+import org.apache.kafka.streams.processor.To;
 import org.galatea.kafka.starter.messaging.streams.domain.ConfiguredHeaders;
 
 public class TaskContext {
@@ -11,11 +12,12 @@ public class TaskContext {
   @Delegate(excludes = ProcessorContextDelegateExcludes.class)
   private final ProcessorContext innerContext;
 
-  public String partitionKey() {
+  public byte[] partitionKey() {
+
     Iterator<Header> iter = innerContext.headers()
         .headers(ConfiguredHeaders.USED_PARTITION_KEY.getKey()).iterator();
     if (iter.hasNext()) {
-      return new String(iter.next().value());
+      return iter.next().value();
     }
     return null;
   }
@@ -23,6 +25,9 @@ public class TaskContext {
   private interface ProcessorContextDelegateExcludes {
 
     <K, V> void forward(K key, V value);
+    <K, V> void forward(K key, V value, To to);
+    <K, V> void forward(K key, V value, int to);
+    <K, V> void forward(K key, V value, String to);
   }
 
   public TaskContext(ProcessorContext innerContext) {

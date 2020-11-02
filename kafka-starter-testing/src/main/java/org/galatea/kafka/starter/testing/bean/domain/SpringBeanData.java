@@ -3,8 +3,8 @@ package org.galatea.kafka.starter.testing.bean.domain;
 import lombok.Value;
 
 @Value
-public class SpringBeanData {
+public class SpringBeanData<T> {
 
   String beanName;
-  Object bean;
+  T bean;
 }

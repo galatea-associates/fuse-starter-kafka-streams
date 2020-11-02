@@ -1,29 +1,38 @@
 package org.galatea.kafka.starter.messaging.streams;
 
+import java.util.EnumMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import lombok.Getter;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.Topology;
 import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.state.Stores;
-import org.apache.kafka.streams.state.internals.KeyValueStoreBuilder;
-import org.apache.kafka.streams.state.internals.RocksDbKeyValueBytesStoreSupplier;
 import org.galatea.kafka.starter.messaging.Topic;
+import org.galatea.kafka.starter.messaging.config.StorePersistence;
 import org.galatea.kafka.starter.messaging.streams.GStream.StreamState;
 
 @Slf4j
+@RequiredArgsConstructor
 public class GStreamBuilder {
 
-  public GStreamBuilder() {
-    this.inner = new StreamsBuilder();
-  }
-
-  public GStreamBuilder(StreamsBuilder inner) {
-    this.inner = inner;
-  }
-
   private final StreamsBuilder inner;
+  private final StorePersistenceSupplier persistenceSupplier;
+  @Getter
+  private final Set<TaskStoreRef<?,?>> builtTaskStores = new HashSet<>();
+
+  private final Map<DslOperationName, AtomicInteger> operationCounters = new EnumMap<>(
+      DslOperationName.class);
+
+  String getOperationName(DslOperationName opName) {
+    return opName.getPrefix() + operationCounters
+        .computeIfAbsent(opName, op -> new AtomicInteger(0)).incrementAndGet();
+  }
 
   public <K, V> GStream<K, V> stream(Topic<K, V> topic) {
     StreamState<K, V> newState = StreamState.<K, V>builder()
@@ -32,7 +41,8 @@ public class GStreamBuilder {
         .valueSerde(topic.getValueSerde())
         .build();
     return new GStream<>(
-        inner.stream(topic.getName(), Consumed.with(topic.getKeySerde(), topic.getValueSerde())),
+        inner
+            .stream(topic.getName(), Consumed.with(topic.getKeySerde(), topic.getValueSerde())),
         newState, this)
         .peek((k, v, c) -> log
             .info("Consumed [{}|{}] Key: {} Value: {}", className(k), className(v), k, v));
@@ -40,9 +50,13 @@ public class GStreamBuilder {
 
   public <K, V> GStreamBuilder addGlobalStore(GlobalStoreRef<K, V> ref) {
     @NonNull Topic<K, V> topic = ref.getOnTopic();
+    StorePersistence persistence = persistenceSupplier.apply(ref.getName());
+    log.info("Configuring Global Store '{}' with persistence {}", ref.getName(),
+        persistence.name());
+
     inner.addGlobalStore(
-        new KeyValueStoreBuilder<>(new RocksDbKeyValueBytesStoreSupplier(ref.getName(), false),
-            ref.getKeySerde(), ref.getValueSerde(), Time.SYSTEM),
+        Stores.keyValueStoreBuilder(persistence.getPersistenceSupplier().apply(ref.getName()),
+            ref.getKeySerde(), ref.getValueSerde()),
         topic.getName(), consumedWith(topic), () -> new SimpleProcessor<>(ref));
     return this;
   }
@@ -60,8 +74,11 @@ public class GStreamBuilder {
   }
 
   <K, V> void addStateStore(TaskStoreRef<K, V> storeRef) {
+    StorePersistence persistence = persistenceSupplier.apply(storeRef.getName());
+    log.info("Configuring Task Store '{}' with persistence {}", storeRef.getName(),
+        persistence.name());
     inner.addStateStore(Stores
-        .keyValueStoreBuilder(Stores.persistentKeyValueStore(storeRef.getName()),
+        .keyValueStoreBuilder(persistence.getPersistenceSupplier().apply(storeRef.getName()),
             storeRef.getKeySerde(), storeRef.getValueSerde()));
   }
 }

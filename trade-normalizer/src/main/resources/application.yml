@@ -5,7 +5,6 @@ kafka:
     application.id: normalizer
     state.dir: ./target/stream_state_test
 
-punctuate.interval: PT30S
 messaging:
   schema-registry-url: http://localhost:8080
   topic:

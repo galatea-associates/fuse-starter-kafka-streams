@@ -1,6 +1,6 @@
 package org.galatea.kafka.starter.testing.bean.domain;
 
-public interface ReplacementSupplier {
+public interface ReplacementSupplier<T> {
 
-  Object get(SpringBeanData existing);
+  T get(SpringBeanData<T> existing);
 }

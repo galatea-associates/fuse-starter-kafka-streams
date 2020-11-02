@@ -113,8 +113,6 @@ public class TopologyTester implements Closeable {
           kvStore.delete(entry.key);
         }
 
-        // TODO: clear store caches that are created by kafka streams internal stores
-
         kvStore.flush();
       }
     }

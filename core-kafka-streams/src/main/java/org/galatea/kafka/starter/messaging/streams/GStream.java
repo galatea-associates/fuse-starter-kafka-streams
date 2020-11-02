@@ -2,18 +2,20 @@ package org.galatea.kafka.starter.messaging.streams;
 
 import java.util.Collection;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.header.Headers;
 import org.apache.kafka.common.serialization.Serde;
+import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Named;
 import org.apache.kafka.streams.kstream.Produced;
 import org.galatea.kafka.starter.messaging.Topic;
+import org.galatea.kafka.starter.messaging.streams.domain.ConfiguredHeaders;
 import org.galatea.kafka.starter.messaging.streams.util.KeyValueMapper;
 import org.galatea.kafka.starter.messaging.streams.util.PeekAction;
 import org.galatea.kafka.starter.messaging.streams.util.ValueMapper;
@@ -24,16 +26,9 @@ import org.galatea.kafka.starter.messaging.streams.util.ValueMapper;
 public class GStream<K, V> {
 
   // TODO:
-  //  TransformerRef should be interface
-  //  punctuates are a collection
-  //  stateStores are a collection
-  //  TaskStoreRef configurable for in-memory or persistent, based on yml
-  //  Tests use in-memory
   //  replace all DSL functions with GStream methods
-  //  anything that contains K,V should implement KeyValueType<K,V> interface
   //  KafkaClusterManager to create and maintain topics
   //  module mode that does a streams reset instead of starting up streams
-  //  replace GStreamInterceptor with GPartitioner, which is configured for the streams producer
   //  make core-kafka-streams spring-agnostic - make new core-kafka-streams-spring that adds spring
 
   @Value
@@ -48,54 +43,53 @@ public class GStream<K, V> {
   private final KStream<K, V> inner;
   private final StreamState<K, V> state;
   private final GStreamBuilder builder;
-  private static final AtomicLong peekTransformerCounter = new AtomicLong(0);
-  private static final AtomicLong valueTransformerCounter = new AtomicLong(0);
-  private static final AtomicLong mapTransformerCounter = new AtomicLong(0);
-  private static final AtomicLong deltaCounter = new AtomicLong(0);
 
   public GStream<K, V> peek(PeekAction<K, V> action) {
 
+    GStream<K, V> transformedStream = transform(
+        TransformerTemplate.<K, V, K, V, Object>builder()
+            .transformMethod((key, value, sp, context, forwarder, state) -> {
+              action.apply(key, value, context);
+              return KeyValue.pair(key, value);
+            })
+            .build());
     // construct new GStream to retain the current StreamState, since this won't cause any updates
     // to the state (but the transformValues by itself would update the state)
-    return new GStream<>(transformValues(new PeekTransformerRef<>(action)).inner, state, builder);
+    return new GStream<>(transformedStream.inner, state, builder);
   }
 
-  public GStream<K, V> repartitionWith(Function<K, String> keyExtractor, Topic<K, V> topic) {
-    return transform(new PartitionKeyInjectorTransformerRef<>(keyExtractor))
-        .repartition(topic);
+  public GStream<K, V> repartitionWith(Function<K, byte[]> keyExtractor, Topic<K, V> topic) {
+    return transform(TransformerTemplate.<K, V, K, V, Object>builder()
+        .transformMethod((key, value, sp, context, forwarder, state) -> {
+          byte[] partitionKey = keyExtractor.apply(key);
+          Headers headers = context.headers();
+          headers.remove(ConfiguredHeaders.NEW_PARTITION_KEY.getKey());
+          headers.add(ConfiguredHeaders.NEW_PARTITION_KEY.getKey(), partitionKey);
+          return KeyValue.pair(key, value);
+        })
+        .build());
   }
 
   public <K1, V1, T> GStream<K1, V1> transform(
-      StatefulTransformerRef<K, V, K1, V1, T> transformer) {
-    Collection<TaskStoreRef<?, ?>> taskStores = TaskStoreUtil.getTaskStores(transformer);
+      TransformerTemplate<K, V, K1, V1, T> transformer) {
+
+    Collection<TaskStoreRef<?, ?>> taskStores = transformer.getTaskStores();
     createNeededStores(taskStores);
 
-    String[] storeNames = taskStores.stream().map(StoreRef::getName).toArray(String[]::new);
+    String[] storeNames = taskStores.stream().map(StoreRef::getName)
+        .toArray(String[]::new);
     StreamState<K1, V1> newState = StreamState.<K1, V1>builder().keyDirty(true).build();
-    return new GStream<>(
-        inner.transform(() -> new ConfiguredTransformer<>(transformer), storeNames), newState,
-        builder);
-  }
 
-  public <V1, T> GStream<K, V1> transformValues(
-      StatefulTransformerRef<K, V, K, V1, T> transformer) {
-    Collection<TaskStoreRef<?, ?>> taskStores = TaskStoreUtil.getTaskStores(transformer);
-    createNeededStores(taskStores);
-
-    String[] storeNames = taskStores.stream().map(StoreRef::getName).toArray(String[]::new);
-    String named = transformer.named();
-    KStream<K, V1> outStream;
-    if (named != null) {
-      outStream = inner
-          .transform(() -> new ConfiguredTransformer<>(transformer), Named.as(named), storeNames);
+    KStream<K1, V1> transformed;
+    if (transformer.getName() != null) {
+      Named named = Named.as(transformer.getName());
+      transformed = inner
+          .transform(() -> new ConfiguredTransformer<>(transformer), named, storeNames);
     } else {
-      outStream = inner.transform(() -> new ConfiguredTransformer<>(transformer), storeNames);
+      transformed = inner
+          .transform(() -> new ConfiguredTransformer<>(transformer), storeNames);
     }
-    StreamState<K, V1> newState = StreamState.<K, V1>builder()
-        .keySerde(state.getKeySerde())
-        .keyDirty(state.isKeyDirty())
-        .build();
-    return new GStream<>(outStream, newState, builder);
+    return new GStream<>(transformed, newState, builder);
   }
 
   public <V1> GStream<K, V1> mapValues(ValueMapper<K, V, V1> mapper) {
@@ -103,23 +97,34 @@ public class GStream<K, V> {
         .keyDirty(state.isKeyDirty())
         .keySerde(state.getKeySerde())
         .build();
-    return new GStream<>(inner.transformValues(() -> new ValueMapTransformer<>(mapper),
-        Named.as("map-values-" + valueTransformerCounter.incrementAndGet())), newState, builder);
+
+    GStream<K, V1> transformed = transform(TransformerTemplate.<K, V, K, V1, Object>builder()
+        .transformMethod((key, value, sp, context, forwarder, state) -> KeyValue
+            .pair(key, mapper.apply(key, value, context)))
+        .name(builder.getOperationName(DslOperationName.MAP_VALUE))
+        .build());
+
+    return new GStream<>(transformed.inner, newState, builder);
   }
 
   public <K1, V1> GStream<K1, V1> map(KeyValueMapper<K, V, K1, V1> mapper) {
     StreamState<K1, V1> newState = StreamState.<K1, V1>builder()
         .keyDirty(true)
         .build();
-    return new GStream<>(inner.transform(() -> new KeyValueMapTransformer<>(mapper),
-        Named.as("map-" + mapTransformerCounter.incrementAndGet())), newState, builder);
+    GStream<K1, V1> transformed = transform(TransformerTemplate.<K, V, K1, V1, Object>builder()
+        .transformMethod(
+            (key, value, sp, context, forwarder, state) -> mapper.apply(key, value, context))
+        .name(builder.getOperationName(DslOperationName.MAP))
+        .build());
+
+    return new GStream<>(transformed.inner, newState, builder);
   }
 
   private void createNeededStores(Collection<TaskStoreRef<?, ?>> storeRefs) {
     storeRefs.forEach(ref -> {
-      if (!ref.isCreated()) {
+      if (builder.getBuiltTaskStores().add(ref)) {
+        log.info("Adding State store to topology: {}", ref.getName());
         builder.addStateStore(ref);
-        ref.setCreated(true);
       }
     });
   }
@@ -147,7 +152,8 @@ public class GStream<K, V> {
             getClass().getSimpleName()));
   }
 
-  public <K1, V1> GStream<K1, V1> asKStream(Function<KStream<K, V>, KStream<K1, V1>> useRawStream) {
+  public <K1, V1> GStream<K1, V1> asKStream(
+      Function<KStream<K, V>, KStream<K1, V1>> useRawStream) {
     StreamState<K1, V1> newState = StreamState.<K1, V1>builder()
         .keyDirty(true)
         .build();
@@ -172,8 +178,8 @@ public class GStream<K, V> {
         .build();
     return new GStream<>(postRepartition, newState, builder)
         .peek((k, v, c) -> log
-            .info("{} Consumed Repartition [{}|{}] Key: {} Value: {}", c.taskId(), className(k),
-                className(v), k, v));
+            .info("Consumed Repartition [{}|{}] Key: {} Value: {}", className(k), className(v), k,
+                v));
   }
 
   public void to(Topic<K, V> topic) {

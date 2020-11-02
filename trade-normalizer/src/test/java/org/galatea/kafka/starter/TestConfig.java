@@ -4,6 +4,8 @@ import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import io.confluent.kafka.schemaregistry.client.MockSchemaRegistryClient;
+import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -26,11 +28,17 @@ import org.springframework.context.annotation.DependsOn;
 @Configuration
 public class TestConfig {
 
+  private static final SchemaRegistryClient mockRegistryClient = new MockSchemaRegistryClient();
+
+  /**
+   * Use rules to substitute some beans, for use in tests (i.e. {@link
+   * org.galatea.kafka.starter.messaging.Topic} objects
+   */
   @Bean
   SubstitutionUtil beanProcessor() {
     return new SubstitutionUtil()
-        .withRule(DefaultBeanRules.topicSerdes())
-        .withRule(DefaultBeanRules.adminClient());
+        .withRule(DefaultBeanRules.replaceSerdesWithMocks(mockRegistryClient))
+        .withRule(DefaultBeanRules.mockAdminClient());
   }
 
   @Bean

@@ -9,6 +9,7 @@ import org.galatea.kafka.starter.messaging.security.SecurityMsgValue;
 import org.galatea.kafka.starter.messaging.streams.GStreamBuilder;
 import org.galatea.kafka.starter.messaging.streams.GlobalStoreRef;
 import org.galatea.kafka.starter.messaging.streams.TopologyProvider;
+import org.galatea.kafka.starter.messaging.streams.TransformerTemplate;
 import org.galatea.kafka.starter.messaging.trade.TradeMsgKey;
 import org.galatea.kafka.starter.messaging.trade.TradeMsgValue;
 import org.galatea.kafka.starter.messaging.trade.input.InputTradeMsgKey;
@@ -22,7 +23,9 @@ public class StreamController implements TopologyProvider {
 
   private final Topic<InputTradeMsgKey, InputTradeMsgValue> inputTradeTopic;
   private final Topic<TradeMsgKey, TradeMsgValue> normalizedTradeTopic;
-  private final TradeTransformer tradeTransformer;
+
+  // Defined in TransformerConfig
+  private final TransformerTemplate<InputTradeMsgKey, InputTradeMsgValue, TradeMsgKey, TradeMsgValue, ?> transformerTemplate;
   private final GlobalStoreRef<SecurityIsinMsgKey, SecurityMsgValue> securityStoreRef;
 
   @Override
@@ -30,7 +33,7 @@ public class StreamController implements TopologyProvider {
     builder.addGlobalStore(securityStoreRef);
 
     builder.stream(inputTradeTopic)
-        .transform(tradeTransformer)
+        .transform(transformerTemplate)
         .to(normalizedTradeTopic);
 
     return builder.build();

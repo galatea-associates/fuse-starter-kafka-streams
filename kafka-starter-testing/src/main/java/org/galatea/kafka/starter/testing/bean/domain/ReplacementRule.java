@@ -17,4 +17,20 @@ public interface ReplacementRule {
       }
     };
   }
+
+  static <T> ReplacementRule ofTyped(Class<T> beanOfType, TypedReplacementSupplier<T> supplier) {
+    ReplacementPredicate predicate = beanData -> beanOfType.isAssignableFrom(beanData.getBean().getClass());
+
+    return new ReplacementRule() {
+      @Override
+      public ReplacementPredicate getPredicate() {
+        return predicate;
+      }
+
+      @Override
+      public TypedReplacementSupplier<T> getSupplier() {
+        return supplier;
+      }
+    };
+  }
 }
