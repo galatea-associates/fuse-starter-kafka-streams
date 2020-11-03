@@ -24,7 +24,7 @@ public class GStreamBuilder {
   private final StreamsBuilder inner;
   private final StorePersistenceSupplier persistenceSupplier;
   @Getter
-  private final Set<TaskStoreRef<?,?>> builtTaskStores = new HashSet<>();
+  private final Set<TaskStoreRef<?, ?>> builtTaskStores = new HashSet<>();
 
   private final Map<DslOperationName, AtomicInteger> operationCounters = new EnumMap<>(
       DslOperationName.class);
