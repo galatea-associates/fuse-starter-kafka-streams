@@ -24,6 +24,7 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.serialization.Serde;
@@ -565,4 +566,47 @@ public class TopologyTester implements Closeable {
   public void close() {
     driver.close();
   }
+
+
+  public <K, V> void assertOutput(OutputAssertion<K, V> assertion) throws Exception {
+
+    TopicConfig<K, V> topicConfig = outputTopicConfig(assertion.getOutputTopic());
+
+    List<KeyValue<K, V>> output = readOutput(topicConfig);
+    if (assertion.getExpectedRecords().isEmpty() && output.isEmpty()) {
+      return;
+    }
+
+    if (!output.isEmpty()) {
+      assertFalse("output is not empty but expectedOutput is. At least 1 record is required "
+              + "in 'expectedRecords' for in-depth comparison",
+          assertion.getExpectedRecords().isEmpty());
+    }
+    Set<String> expectedFields = AliasHelper
+        .expandAliasKeys(assertion.getExpectedRecords().get(0).keySet(), topicConfig.getAliases());
+    expectedFields.addAll(
+        AliasHelper.expandAliasKeys(assertion.getAlwaysAssertFields(), topicConfig.getAliases()));
+
+    // comparableActualOutput has only necessary fields populated, as defined by 'expectedFields'
+    List<KeyValue<K, V>> comparableActualOutput = stripUnnecessaryFields(output,
+        expectedFields, topicConfig);
+
+    List<KeyValue<K, V>> expectedOutput = new ArrayList<>(
+        expectedRecordsFromMaps(topicConfig, assertion.getExpectedRecords(),
+            assertion.getAlwaysAssertFields()));
+
+    if (!assertion.isFlattenToLatestValuePerKey()) {
+      assertListEquals(expectedOutput, comparableActualOutput, !assertion.isCheckRecordOrder());
+    } else {
+      assertListEquals(latestPerKey(expectedOutput), latestPerKey(comparableActualOutput), true);
+    }
+  }
+
+  private <K, V> List<KeyValue<K, V>> latestPerKey(List<KeyValue<K, V>> list) {
+    return list.stream().collect(Collectors.toMap(pair -> pair.key, pair -> pair.value)).entrySet()
+        .stream().map(entry -> KeyValue.pair(entry.getKey(), entry.getValue()))
+        .collect(Collectors.toList());
+  }
 }
+
+

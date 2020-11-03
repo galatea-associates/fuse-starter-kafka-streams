@@ -18,6 +18,7 @@ import org.galatea.kafka.starter.messaging.trade.TradeMsgKey;
 import org.galatea.kafka.starter.messaging.trade.TradeMsgValue;
 import org.galatea.kafka.starter.messaging.trade.input.InputTradeMsgKey;
 import org.galatea.kafka.starter.messaging.trade.input.InputTradeMsgValue;
+import org.galatea.kafka.starter.testing.OutputAssertion;
 import org.galatea.kafka.starter.testing.TopologyTester;
 import org.galatea.kafka.starter.testing.avro.AvroPostProcessor;
 import org.junit.Ignore;
@@ -76,7 +77,10 @@ public class TradeNormalizerCucumberStep {
   @SneakyThrows
   @Then("^output the following trade records:$")
   public void outputTable(DataTable table) {
-    tester.assertOutputList(normalizedTradeTopic, table.asMaps(), true);
+    tester.assertOutput(OutputAssertion.builder(normalizedTradeTopic)
+        .expectedRecords(table.asMaps())
+        .checkRecordOrder(false)
+        .build());
   }
 
   @Given("time passes")
