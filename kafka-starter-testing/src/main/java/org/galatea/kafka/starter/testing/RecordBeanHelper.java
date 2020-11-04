@@ -1,4 +1,4 @@
-package org.galatea.kafka.starter.testing.bean;
+package org.galatea.kafka.starter.testing;
 
 import java.lang.reflect.InvocationTargetException;
 import java.time.Instant;
@@ -13,7 +13,6 @@ import java.util.concurrent.Callable;
 import java.util.function.Function;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.streams.KeyValue;
-import org.galatea.kafka.starter.testing.TopicConfig;
 import org.galatea.kafka.starter.testing.alias.AliasHelper;
 import org.galatea.kafka.starter.testing.bean.editor.InstantEditor;
 import org.galatea.kafka.starter.testing.bean.editor.JodaDateTimeEditor;
@@ -31,7 +30,7 @@ public class RecordBeanHelper {
 
   public static final String PREFIX_KEY = "KEY.";
   public static final String PREFIX_VALUE = "VALUE.";
-  private static String NULL_STRING = "<null>";
+  private static final String NULL_STRING = "<null>";
 
   /**
    * Create record with specified fields set, using provided configuration for specific conversions
@@ -367,6 +366,12 @@ public class RecordBeanHelper {
             .maybeUseTypeConversion(wrappedBean.getPropertyType(fieldPath),
                 value);
       }
+
+      if (valueToApply != null && valueToApply.getClass().equals(String.class) &&
+          ((String) valueToApply).equalsIgnoreCase(NULL_STRING)) {
+        valueToApply = null;
+      }
+
       try {
         wrappedBean.setPropertyValue(fieldPath, valueToApply);
       } catch (TypeMismatchException e) {

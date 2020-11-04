@@ -1,4 +1,4 @@
-package org.galatea.kafka.starter.testing.bean;
+package org.galatea.kafka.starter.testing;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
@@ -19,15 +19,14 @@ import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.KeyValue;
 import org.galatea.kafka.starter.messaging.test.TestMsgKey;
 import org.galatea.kafka.starter.messaging.test.TestMsgValue;
-import org.galatea.kafka.starter.testing.TopicConfig;
-import org.galatea.kafka.starter.testing.conversion.ConversionService;
+import org.galatea.kafka.starter.testing.conversion.ConversionUtil;
 import org.junit.Before;
 import org.junit.Test;
 
 @Slf4j
 public class RecordBeanHelperTest {
 
-  private ConversionService conversionService = new ConversionService();
+  private final ConversionUtil conversionUtil = new ConversionUtil();
   private TopicConfig<TestMsgKey, TestMsgValue> beanTopicConfig;
   private TopicConfig<String, String> primitiveTopicConfig;
 
@@ -75,7 +74,7 @@ public class RecordBeanHelperTest {
     Map<String, String> fieldMap = new HashMap<>();
     String alias = "alias1";
     String fullyQualifiedField = "doubleField";
-    beanTopicConfig.getAliases().put(alias, fullyQualifiedField);
+    beanTopicConfig.registerAlias(alias, fullyQualifiedField);
 
     String stringValue = "123";
     double expectedValue = 123;
@@ -94,8 +93,8 @@ public class RecordBeanHelperTest {
     Map<String, String> fieldMap = new HashMap<>();
     String fullyQualifiedField = "doubleField";
 
-    beanTopicConfig.getConversions()
-        .put(fullyQualifiedField, stringValue -> Double.parseDouble(stringValue.replace("_", "")));
+    beanTopicConfig.registerConversion(fullyQualifiedField,
+        stringValue -> Double.parseDouble(stringValue.replace("_", "")));
 
     String stringValue = "_123_";
     double expectedValue = 123;
@@ -114,9 +113,9 @@ public class RecordBeanHelperTest {
     Map<String, String> fieldMap = new HashMap<>();
     String alias = "alias1";
     String fullyQualifiedField = "doubleField";
-    beanTopicConfig.getAliases().put(alias, fullyQualifiedField);
-    beanTopicConfig.getConversions()
-        .put(alias, stringValue -> Double.parseDouble(stringValue.replace("_", "")));
+    beanTopicConfig.registerAlias(alias, fullyQualifiedField);
+    beanTopicConfig
+        .registerConversion(alias, stringValue -> Double.parseDouble(stringValue.replace("_", "")));
 
     String stringValue = "_123_";
     double expectedValue = 123;
@@ -216,7 +215,7 @@ public class RecordBeanHelperTest {
 
     String alias = "alias1";
     String fullyQualifiedField = "nonNullableStringField";
-    beanTopicConfig.getAliases().put(alias, fullyQualifiedField);
+    beanTopicConfig.registerAlias(alias, fullyQualifiedField);
     fieldsToCopy.add(alias);
 
     // when
@@ -330,8 +329,8 @@ public class RecordBeanHelperTest {
   public void createBeanRecord_definedFieldDefault() {
     Map<String, String> fieldMap = new HashMap<>();
     String defaultValue = "defValue";
-    beanTopicConfig.getDefaultValues().put("nullableStringField", defaultValue);
-    beanTopicConfig.getDefaultValues().put("nonNullableStringField", defaultValue);
+    beanTopicConfig.registerDefault("nullableStringField", defaultValue);
+    beanTopicConfig.registerDefault("nonNullableStringField", defaultValue);
 
     KeyValue<TestMsgKey, TestMsgValue> record = RecordBeanHelper
         .createRecord(conversionService, fieldMap, beanTopicConfig, true, true);
@@ -349,8 +348,8 @@ public class RecordBeanHelperTest {
     Function<String, Object> conversionFunction = stringValue -> stringValue.toLowerCase()
         + stringValue.toUpperCase();
 
-    beanTopicConfig.getDefaultValues().put(fieldName, defaultValue);
-    beanTopicConfig.getConversions().put(fieldName, conversionFunction);
+    beanTopicConfig.registerDefault(fieldName, defaultValue);
+    beanTopicConfig.registerConversion(fieldName, conversionFunction);
 
     KeyValue<TestMsgKey, TestMsgValue> record = RecordBeanHelper
         .createRecord(conversionService, fieldMap, beanTopicConfig, true, true);
@@ -366,13 +365,25 @@ public class RecordBeanHelperTest {
     String fieldAlias = "fieldAlias";
     String fieldName = "nonNullableStringField";
 
-    beanTopicConfig.getDefaultValues().put(fieldAlias, defaultValue);
-    beanTopicConfig.getAliases().put(fieldAlias, fieldName);
+    beanTopicConfig.registerDefault(fieldAlias, defaultValue);
+    beanTopicConfig.registerAlias(fieldAlias, fieldName);
 
     KeyValue<TestMsgKey, TestMsgValue> record = RecordBeanHelper
         .createRecord(conversionService, fieldMap, beanTopicConfig, true, true);
 
     assertEquals(defaultValue, record.value.getNonNullableStringField());
+  }
+
+  @Test
+  @SneakyThrows
+  public void createBeanRecord_setFieldNull() {
+    Map<String, String> fieldMap = new HashMap<>();
+    fieldMap.put("nullableStringField", "<null>");
+
+    KeyValue<TestMsgKey, TestMsgValue> record = RecordBeanHelper
+        .createRecord(conversionUtil, fieldMap, beanTopicConfig, true, true);
+
+    assertNull(record.value.getNullableStringField());
   }
 
 }

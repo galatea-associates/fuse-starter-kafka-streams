@@ -12,6 +12,8 @@ import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.Topology;
+import org.apache.kafka.streams.kstream.Consumed;
+import org.apache.kafka.streams.kstream.Produced;
 import org.apache.kafka.streams.kstream.Transformer;
 import org.apache.kafka.streams.processor.ProcessorContext;
 import org.apache.kafka.streams.state.KeyValueStore;
@@ -85,7 +87,7 @@ public class TestTopology {
 
     // Raw example of a transformer created inline. Other transformers in this example are created
     // using addTransformerToBuilder()
-    builder.stream(inputTopic.getName(), inputTopic.consumedWith())
+    builder.stream(inputTopic.getName(), consumedWith(inputTopic))
         .peek(TestTopology::logConsume)
         .transform(
             () -> new Transformer<String, String, KeyValue<String, String>>() {
@@ -116,7 +118,7 @@ public class TestTopology {
               }
             }, STORE_NAME1)
         .peek(TestTopology::logProduce)
-        .to(outputTopic.getName(), outputTopic.producedWith());
+        .to(outputTopic.getName(), producedWith(outputTopic));
 
     addTransformerToBuilder(builder, inputTopic2,
         (existingValue, newValue) -> {
@@ -155,7 +157,7 @@ public class TestTopology {
   private static <K, V> void addTransformerToBuilder(StreamsBuilder builder,
       Topic<K, V> inputTopic, BiFunction<V, V, V> transformBody, String storeName,
       Topic<K, V> outputTopic) {
-    builder.stream(inputTopic.getName(), inputTopic.consumedWith())
+    builder.stream(inputTopic.getName(), consumedWith(inputTopic))
         .peek(TestTopology::logConsume)
         .transform(
             () -> new Transformer<K, V, KeyValue<K, V>>() {
@@ -180,7 +182,7 @@ public class TestTopology {
               }
             }, storeName)
         .peek(TestTopology::logProduce)
-        .to(outputTopic.getName(), outputTopic.producedWith());
+        .to(outputTopic.getName(), producedWith(outputTopic));
   }
 
   private static void logConsume(Object key, Object value) {
@@ -195,4 +197,11 @@ public class TestTopology {
     return obj == null ? "N/A" : obj.getClass().getSimpleName();
   }
 
+  private static <K, V> Consumed<K, V> consumedWith(Topic<K, V> topic) {
+    return Consumed.with(topic.getKeySerde(), topic.getValueSerde());
+  }
+
+  private static <K, V> Produced<K, V> producedWith(Topic<K, V> topic) {
+    return Produced.with(topic.getKeySerde(), topic.getValueSerde());
+  }
 }

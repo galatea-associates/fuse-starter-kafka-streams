@@ -11,9 +11,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 import lombok.SneakyThrows;
+import org.apache.avro.specific.SpecificRecord;
 import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.KeyValue;
@@ -26,6 +28,8 @@ import org.galatea.kafka.starter.messaging.test.TestMsgKey;
 import org.galatea.kafka.starter.messaging.test.TestMsgValue;
 import org.galatea.kafka.starter.messaging.test.TestSubMsg;
 import org.galatea.kafka.starter.testing.conversion.ConversionService;
+import org.galatea.kafka.starter.testing.avro.AvroPostProcessor;
+import org.galatea.kafka.starter.testing.conversion.ConversionUtil;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -58,6 +62,12 @@ public class TopologyTesterTest {
   }
 
   private TopologyTester newTester() {
+    TopologyTester tester = newTester(streamProperties(lastTesterId.incrementAndGet()));
+    tester.registerPostProcessor(SpecificRecord.class, AvroPostProcessor.defaultUtil());
+    return tester;
+  }
+
+  private TopologyTester newTesterWithoutAvroRegistered() {
     return newTester(streamProperties(lastTesterId.incrementAndGet()));
   }
 
@@ -81,8 +91,6 @@ public class TopologyTesterTest {
     tester.configureStore(storeName4, inputTopic4.getKeySerde(), inputTopic4.getValueSerde(),
         TestMsgKey::new, TestMsgValue::new);
 
-    tester.registerAvroClass(TestMsgKey.class);
-    tester.registerAvroClass(TestMsgValue.class);
     tester.registerBeanClass(TestMsgKey.class);
     tester.registerBeanClass(TestMsgValue.class);
 
@@ -106,6 +114,7 @@ public class TopologyTesterTest {
           }
           return REF_DATE;
         });
+
     return tester;
   }
 
@@ -270,7 +279,7 @@ public class TopologyTesterTest {
   @Test(expected = SerializationException.class)
   @SneakyThrows
   public void beanClassRegistered_NotAvro() {
-    TopologyTester tester = newTester();
+    TopologyTester tester = newTesterWithoutAvroRegistered();
     tester.registerBeanClass(TestSubMsg.class);
     Map<String, String> inputRecord = new HashMap<>();
     inputRecord.put("nonNullableString", "a");
@@ -283,7 +292,6 @@ public class TopologyTesterTest {
   public void classRegisteredAvroAndBean() {
     TopologyTester tester = newTester();
     tester.registerBeanClass(TestSubMsg.class);
-    tester.registerAvroClass(TestSubMsg.class);
     Map<String, String> inputRecord = new HashMap<>();
     inputRecord.put("nonNullableString", "a");
 
@@ -321,6 +329,115 @@ public class TopologyTesterTest {
 
   @Test
   @SneakyThrows
+  public void assertOutputAndStoreContainWithDefaultField() {
+    TopologyTester tester = newTester();
+    tester.getOutputConfig(outputTopic2).getDefaultValues()
+        .put("nullableStringField", "defaultVal");
+    tester.getStoreConfig(storeName2).getDefaultValues().put("nullableStringField", "defaultVal");
+
+    Set<String> extraFieldsToVerify = new HashSet<>();
+    extraFieldsToVerify.add("nullableStringField");
+
+    Map<String, String> inputRecord = new HashMap<>();
+    inputRecord.put("nonNullableStringField", "test");
+    inputRecord.put("nullableStringField", "defaultVal");
+    Map<String, String> outputRecord = new HashMap<>();
+    outputRecord.put("nonNullableStringField", "TEST");
+
+    tester.pipeInput(inputTopic2, inputRecord);
+
+    tester.assertOutputList(outputTopic2, Collections.singletonList(outputRecord), false,
+        extraFieldsToVerify);
+    tester.assertStoreContain(storeName2, Collections.singletonList(outputRecord),
+        extraFieldsToVerify);
+  }
+
+  @Test(expected = AssertionError.class)
+  @SneakyThrows
+  public void assertOutputListFailDefaultField() {
+    TopologyTester tester = newTester();
+    tester.getOutputConfig(outputTopic2).getDefaultValues()
+        .put("nullableStringField", "defaultVal");
+
+    Set<String> extraFieldsToVerify = new HashSet<>();
+    extraFieldsToVerify.add("nullableStringField");
+
+    Map<String, String> inputRecord = new HashMap<>();
+    inputRecord.put("nonNullableStringField", "test");
+    Map<String, String> outputRecord = new HashMap<>();
+    outputRecord.put("nonNullableStringField", "TEST");
+
+    tester.pipeInput(inputTopic2, inputRecord);
+
+    tester.assertOutputList(outputTopic2, Collections.singletonList(outputRecord), false,
+        extraFieldsToVerify);
+  }
+
+  @Test(expected = AssertionError.class)
+  @SneakyThrows
+  public void assertOutputMapFailDefaultField() {
+    TopologyTester tester = newTester();
+    tester.getOutputConfig(outputTopic2).getDefaultValues()
+        .put("nullableStringField", "defaultVal");
+
+    Set<String> extraFieldsToVerify = new HashSet<>();
+    extraFieldsToVerify.add("nullableStringField");
+
+    Map<String, String> inputRecord = new HashMap<>();
+    inputRecord.put("nonNullableStringField", "test");
+    Map<String, String> outputRecord = new HashMap<>();
+    outputRecord.put("nonNullableStringField", "TEST");
+
+    tester.pipeInput(inputTopic2, inputRecord);
+
+    tester.assertOutputMap(outputTopic2, Collections.singletonList(outputRecord),
+        extraFieldsToVerify);
+  }
+
+  @Test
+  @SneakyThrows
+  public void assertOutputMapDefaultField() {
+    TopologyTester tester = newTester();
+    tester.getOutputConfig(outputTopic2).getDefaultValues()
+        .put("nullableStringField", "defaultVal");
+
+    Set<String> extraFieldsToVerify = new HashSet<>();
+    extraFieldsToVerify.add("nullableStringField");
+
+    Map<String, String> inputRecord = new HashMap<>();
+    inputRecord.put("nonNullableStringField", "test");
+    inputRecord.put("nullableStringField", "defaultVal");
+    Map<String, String> outputRecord = new HashMap<>();
+    outputRecord.put("nonNullableStringField", "TEST");
+
+    tester.pipeInput(inputTopic2, inputRecord);
+
+    tester.assertOutputMap(outputTopic2, Collections.singletonList(outputRecord),
+        extraFieldsToVerify);
+  }
+
+  @Test(expected = AssertionError.class)
+  @SneakyThrows
+  public void assertStoreContainFailWithDefaultField() {
+    TopologyTester tester = newTester();
+    tester.getStoreConfig(storeName2).getDefaultValues().put("nullableStringField", "defaultVal");
+
+    Set<String> extraFieldsToVerify = new HashSet<>();
+    extraFieldsToVerify.add("nullableStringField");
+
+    Map<String, String> inputRecord = new HashMap<>();
+    inputRecord.put("nonNullableStringField", "test");
+    Map<String, String> outputRecord = new HashMap<>();
+    outputRecord.put("nonNullableStringField", "TEST");
+
+    tester.pipeInput(inputTopic2, inputRecord);
+
+    tester.assertStoreContain(storeName2, Collections.singletonList(outputRecord),
+        extraFieldsToVerify);
+  }
+
+  @Test
+  @SneakyThrows
   public void assertStoreNotContain() {
     Map<String, String> inputRecord = new HashMap<>();
     inputRecord.put("nonNullableStringField", "test");
@@ -353,6 +470,24 @@ public class TopologyTesterTest {
         inputTopic2.getKeySerde(), inputTopic2.getValueSerde());
 
     tester.pipeInput(unknownInputTopic, inputRecord);
+  }
+
+  @Test
+  @SneakyThrows
+  public void pipeInput_UseRecordCallback() {
+    Map<String, String> inputRecord = new HashMap<>();
+    inputRecord.put("nonNullableStringField", "test");
+
+    Map<String, String> outputRecord = new HashMap<>();
+    outputRecord.put("nonNullableStringField", "test");
+    outputRecord.put("nullableStringField", "test");
+
+    tester.pipeInput(inputTopic4, inputRecord, record -> {
+      record.value.setNullableStringField(record.value.getNonNullableStringField());
+      return record;
+    });
+
+    tester.assertOutputList(outputTopic4, Collections.singletonList(outputRecord), false);
   }
 
   @Test(expected = IllegalStateException.class)
@@ -611,4 +746,197 @@ public class TopologyTesterTest {
 
     tester.assertOutputList(outputTopic4, outputRecords, true);
   }
+
+  @Test(expected = AssertionError.class)
+  @SneakyThrows
+  public void assertOutputList_LenientOrderWithDuplicatesFails() {
+    Map<String, String> inputRecord1 = new HashMap<>();
+    inputRecord1.put("doubleField", "123");
+    inputRecord1.put("nonNullableStringField", "fieldvalue");
+    Map<String, String> inputRecord2 = new HashMap<>();
+    inputRecord2.put("doubleField", "1234");
+    inputRecord2.put("nonNullableStringField", "fieldvalue2");
+
+    Map<String, String> outputRecord1 = new HashMap<>();
+    outputRecord1.put("nonNullableStringField", "fieldvalue");
+    Map<String, String> outputRecord2 = new HashMap<>();
+    outputRecord2.put("nonNullableStringField", "fieldvalue3");
+
+    List<Map<String, String>> outputRecords = new ArrayList<>();
+    outputRecords.add(outputRecord1);
+    outputRecords.add(outputRecord1);
+    outputRecords.add(outputRecord2);
+
+    tester.pipeInput(inputTopic4, inputRecord1);
+    tester.pipeInput(inputTopic4, inputRecord1);
+    tester.pipeInput(inputTopic4, inputRecord2);
+
+    tester.assertOutputList(outputTopic4, outputRecords, true);
+  }
+
+  @Test
+  @SneakyThrows
+  public void assertOutputListWithDefaultFields() {
+
+    TopologyTester tester = newTester();
+    TopicConfig<TestMsgKey, TestMsgValue> outputConfig = tester.getOutputConfig(outputTopic4);
+    outputConfig.getDefaultValues().put("nullableStringField", "defaultVal");
+
+    Set<String> extraFieldsToValidate = new HashSet<>();
+    extraFieldsToValidate.add("nullableStringField");
+
+    Map<String, String> inputRecord1 = new HashMap<>();
+    inputRecord1.put("doubleField", "123");
+    inputRecord1.put("nonNullableStringField", "fieldvalue");
+    inputRecord1.put("nullableStringField", "defaultVal");
+    Map<String, String> inputRecord2 = new HashMap<>();
+    inputRecord2.put("doubleField", "1234");
+    inputRecord2.put("nonNullableStringField", "fieldvalue2");
+    inputRecord2.put("nullableStringField", "defaultVal");
+
+    Map<String, String> outputRecord1 = new HashMap<>();
+    outputRecord1.put("nonNullableStringField", "fieldvalue");
+    Map<String, String> outputRecord2 = new HashMap<>();
+    outputRecord2.put("nonNullableStringField", "fieldvalue2");
+
+    List<Map<String, String>> outputRecords = new ArrayList<>();
+    outputRecords.add(outputRecord1);
+    outputRecords.add(outputRecord1);
+    outputRecords.add(outputRecord2);
+
+    tester.pipeInput(inputTopic4, inputRecord1);
+    tester.pipeInput(inputTopic4, inputRecord1);
+    tester.pipeInput(inputTopic4, inputRecord2);
+
+    tester.assertOutputList(outputTopic4, outputRecords, true, extraFieldsToValidate);
+  }
+
+  @Test(expected = IllegalArgumentException.class)
+  @SneakyThrows
+  public void assertOutputList_ExceptionWithExtraFieldButNoDefault() {
+
+    Set<String> extraFieldsToValidate = new HashSet<>();
+    extraFieldsToValidate.add("nullableStringField");
+
+    Map<String, String> inputRecord1 = new HashMap<>();
+    inputRecord1.put("doubleField", "123");
+    inputRecord1.put("nonNullableStringField", "fieldvalue");
+    inputRecord1.put("nullableStringField", "defaultVal");
+
+    Map<String, String> outputRecord1 = new HashMap<>();
+    outputRecord1.put("nonNullableStringField", "fieldvalue");
+
+    List<Map<String, String>> outputRecords = new ArrayList<>();
+    outputRecords.add(outputRecord1);
+
+    tester.pipeInput(inputTopic4, inputRecord1);
+
+    tester.assertOutputList(outputTopic4, outputRecords, true, extraFieldsToValidate);
+  }
+
+  @Test(expected = IllegalArgumentException.class)
+  @SneakyThrows
+  public void assertOutputMap_ExceptionWithExtraFieldButNoDefault() {
+
+    Set<String> extraFieldsToValidate = new HashSet<>();
+    extraFieldsToValidate.add("nullableStringField");
+
+    Map<String, String> inputRecord1 = new HashMap<>();
+    inputRecord1.put("doubleField", "123");
+    inputRecord1.put("nonNullableStringField", "fieldvalue");
+    inputRecord1.put("nullableStringField", "defaultVal");
+
+    Map<String, String> outputRecord1 = new HashMap<>();
+    outputRecord1.put("nonNullableStringField", "fieldvalue");
+
+    List<Map<String, String>> outputRecords = new ArrayList<>();
+    outputRecords.add(outputRecord1);
+
+    tester.pipeInput(inputTopic4, inputRecord1);
+
+    tester.assertOutputMap(outputTopic4, outputRecords, extraFieldsToValidate);
+  }
+
+  @Test(expected = IllegalArgumentException.class)
+  @SneakyThrows
+  public void assertStoreContain_ExceptionWithExtraFieldButNoDefault() {
+
+    Set<String> extraFieldsToValidate = new HashSet<>();
+    extraFieldsToValidate.add("nullableStringField");
+
+    Map<String, String> inputRecord1 = new HashMap<>();
+    inputRecord1.put("nonNullableStringField", "fieldvalue");
+    inputRecord1.put("nullableStringField", "defaultVal");
+
+    Map<String, String> outputRecord1 = new HashMap<>();
+    outputRecord1.put("nonNullableStringField", "fieldvalue");
+
+    List<Map<String, String>> outputRecords = new ArrayList<>();
+    outputRecords.add(outputRecord1);
+
+    tester.pipeInput(inputTopic4, inputRecord1);
+
+    tester.assertStoreContain(storeName4, outputRecords, extraFieldsToValidate);
+  }
+
+  @Test
+  @SneakyThrows
+  public void assertStoreContain_ExtraField() {
+
+    TopologyTester tester = newTester();
+    tester.getStoreConfig(storeName4).getDefaultValues().put("nullableStringField", "defaultVal");
+
+    Set<String> extraFieldsToValidate = new HashSet<>();
+    extraFieldsToValidate.add("nullableStringField");
+
+    Map<String, String> inputRecord1 = new HashMap<>();
+    inputRecord1.put("nonNullableStringField", "fieldvalue");
+    inputRecord1.put("nullableStringField", "defaultVal");
+
+    Map<String, String> outputRecord1 = new HashMap<>();
+    outputRecord1.put("nonNullableStringField", "fieldvalue");
+
+    List<Map<String, String>> outputRecords = new ArrayList<>();
+    outputRecords.add(outputRecord1);
+
+    tester.pipeInput(inputTopic4, inputRecord1);
+
+    tester.assertStoreContain(storeName4, outputRecords, extraFieldsToValidate);
+  }
+
+  @Test(expected = IllegalArgumentException.class)
+  @SneakyThrows
+  public void assertStoreNotContain_ExceptionWithExtraFieldButNoDefault() {
+
+    Set<String> extraFieldsToValidate = new HashSet<>();
+    extraFieldsToValidate.add("nullableStringField");
+
+    Map<String, String> outputRecord1 = new HashMap<>();
+    outputRecord1.put("nonNullableStringField", "fieldvalue");
+
+    List<Map<String, String>> outputRecords = new ArrayList<>();
+    outputRecords.add(outputRecord1);
+
+    tester.assertStoreNotContain(storeName4, outputRecords, extraFieldsToValidate);
+  }
+
+  @Test
+  @SneakyThrows
+  public void assertStoreNotContain_ExtraField() {
+
+    TopologyTester tester = newTester();
+    tester.getStoreConfig(storeName4).getDefaultValues().put("nullableStringField", "defaultVal");
+
+    Set<String> extraFieldsToValidate = new HashSet<>();
+    extraFieldsToValidate.add("nullableStringField");
+
+    Map<String, String> outputRecord1 = new HashMap<>();
+    outputRecord1.put("nonNullableStringField", "fieldvalue");
+
+    List<Map<String, String>> outputRecords = new ArrayList<>();
+    outputRecords.add(outputRecord1);
+
+    tester.assertStoreNotContain(storeName4, outputRecords, extraFieldsToValidate);
+  }
+
 }

@@ -1,13 +1,16 @@
-package org.galatea.kafka.starter.streams;
+package org.galatea.kafka.starter;
 
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
+import io.cucumber.core.api.Scenario;
+import io.cucumber.datatable.DataTable;
+import io.cucumber.java.Before;
+import io.cucumber.java.en.Given;
+import io.cucumber.java.en.Then;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.specific.SpecificRecord;
-import org.galatea.kafka.starter.TestConfig;
-import org.galatea.kafka.starter.messaging.StreamProperties;
+import org.apache.kafka.streams.Topology;
+import org.galatea.kafka.starter.messaging.KafkaStreamsConfig;
+import org.galatea.kafka.starter.messaging.KafkaStreamsStarter;
 import org.galatea.kafka.starter.messaging.Topic;
 import org.galatea.kafka.starter.messaging.security.SecurityIsinMsgKey;
 import org.galatea.kafka.starter.messaging.security.SecurityMsgValue;
@@ -15,83 +18,72 @@ import org.galatea.kafka.starter.messaging.trade.TradeMsgKey;
 import org.galatea.kafka.starter.messaging.trade.TradeMsgValue;
 import org.galatea.kafka.starter.messaging.trade.input.InputTradeMsgKey;
 import org.galatea.kafka.starter.messaging.trade.input.InputTradeMsgValue;
+import org.galatea.kafka.starter.streams.StreamController;
+import org.galatea.kafka.starter.streams.StreamControllerTestHelper;
 import org.galatea.kafka.starter.testing.TopologyTester;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.galatea.kafka.starter.testing.avro.AvroPostProcessor;
+import org.junit.Ignore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.junit4.SpringRunner;
 
 @Slf4j
 @SpringBootTest
-@RunWith(SpringRunner.class)
 @ContextConfiguration(classes = {TestConfig.class, StreamController.class})
 @EnableAutoConfiguration
-public class StreamControllerTest {
+@Ignore   // Without this, IntelliJ will try to run this class, find no tests, and error
+public class TradeNormalizerCucumberStep {
 
   @Autowired
   private StreamController controller;
   @Autowired
-  private StreamProperties properties;
+  private KafkaStreamsConfig properties;
   @Autowired
   private Topic<InputTradeMsgKey, InputTradeMsgValue> inputTradeTopic;
   @Autowired
   private Topic<SecurityIsinMsgKey, SecurityMsgValue> securityTopic;
   @Autowired
   private Topic<TradeMsgKey, TradeMsgValue> normalizedTradeTopic;
+  @MockBean
+  private KafkaStreamsStarter mockStreamsStarter;   // mock KafkaStreamsStarter, so
 
   private static TopologyTester tester;
 
   @Before
-  public void setup() {
+  public void setup(Scenario scenario) {
 
     if (tester == null) {
-      tester = new TopologyTester(controller.buildTopology(), properties.asProperties());
+      Topology topology = StreamControllerTestHelper.buildTopology(controller);
+      tester = new TopologyTester(topology, properties.asProperties());
       tester.configureInputTopic(securityTopic, SecurityIsinMsgKey::new, SecurityMsgValue::new);
       tester.configureInputTopic(inputTradeTopic, InputTradeMsgKey::new, InputTradeMsgValue::new);
       tester.configureOutputTopic(normalizedTradeTopic, TradeMsgKey::new, TradeMsgValue::new);
 
       tester.registerBeanClass(SpecificRecord.class);
-      tester.registerAvroClass(SpecificRecord.class);
+      tester.registerPostProcessor(SpecificRecord.class, AvroPostProcessor.defaultUtil());
     }
     tester.beforeTest();
-
+    log.info("Running scenario: {}", scenario.getName());
   }
 
-  @Test
   @SneakyThrows
-  public void testInput() {
-
-    Map<String, String> securityRecordMap = new HashMap<>();
-    securityRecordMap.put("isin", "isin1");
-    securityRecordMap.put("securityId", "secId");
-    tester.pipeInput(securityTopic, securityRecordMap);
-
-    Map<String, String> tradeRecordMap = new HashMap<>();
-    tradeRecordMap.put("isin", "isin1");
-    tradeRecordMap.put("qty", "10");
-    tester.pipeInput(inputTradeTopic, tradeRecordMap);
-
-    Map<String, String> expectedOutput = new HashMap<>();
-    expectedOutput.put("securityId", "secId");
-    tester.assertOutputList(normalizedTradeTopic, Collections.singletonList(expectedOutput), true);
+  @Given("^receive the following security records:$")
+  public void securityTable(DataTable table) {
+    tester.pipeInput(securityTopic, table.asMaps());
   }
 
-  @Test
   @SneakyThrows
-  public void testInput2() {
+  @Given("^receive the following trade records:$")
+  public void tradeTable(DataTable table) {
+    tester.pipeInput(inputTradeTopic, table.asMaps());
+  }
 
-    Map<String, String> securityRecordMap = new HashMap<>();
-    securityRecordMap.put("isin", "isin2");
-    securityRecordMap.put("securityId", "secId");
-    tester.pipeInput(securityTopic, securityRecordMap);
-
-    Map<String, String> tradeRecordMap = new HashMap<>();
-    tradeRecordMap.put("isin", "isin1");
-    tester.pipeInput(inputTradeTopic, tradeRecordMap);
+  @SneakyThrows
+  @Then("^output the following trade records:$")
+  public void outputTable(DataTable table) {
+    tester.assertOutputList(normalizedTradeTopic, table.asMaps(), true);
   }
 
 }
