@@ -27,9 +27,8 @@ import org.galatea.kafka.starter.messaging.Topic;
 import org.galatea.kafka.starter.messaging.test.TestMsgKey;
 import org.galatea.kafka.starter.messaging.test.TestMsgValue;
 import org.galatea.kafka.starter.messaging.test.TestSubMsg;
-import org.galatea.kafka.starter.testing.conversion.ConversionService;
 import org.galatea.kafka.starter.testing.avro.AvroPostProcessor;
-import org.galatea.kafka.starter.testing.conversion.ConversionUtil;
+import org.galatea.kafka.starter.testing.conversion.ConversionService;
 import org.junit.Before;
 import org.junit.Test;
 

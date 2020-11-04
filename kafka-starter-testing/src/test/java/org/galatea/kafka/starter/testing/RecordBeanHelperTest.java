@@ -19,14 +19,14 @@ import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.KeyValue;
 import org.galatea.kafka.starter.messaging.test.TestMsgKey;
 import org.galatea.kafka.starter.messaging.test.TestMsgValue;
-import org.galatea.kafka.starter.testing.conversion.ConversionUtil;
+import org.galatea.kafka.starter.testing.conversion.ConversionService;
 import org.junit.Before;
 import org.junit.Test;
 
 @Slf4j
 public class RecordBeanHelperTest {
 
-  private final ConversionUtil conversionUtil = new ConversionUtil();
+  private final ConversionService conversionService = new ConversionService();
   private TopicConfig<TestMsgKey, TestMsgValue> beanTopicConfig;
   private TopicConfig<String, String> primitiveTopicConfig;
 
@@ -381,7 +381,7 @@ public class RecordBeanHelperTest {
     fieldMap.put("nullableStringField", "<null>");
 
     KeyValue<TestMsgKey, TestMsgValue> record = RecordBeanHelper
-        .createRecord(conversionUtil, fieldMap, beanTopicConfig, true, true);
+        .createRecord(conversionService, fieldMap, beanTopicConfig, true, true);
 
     assertNull(record.value.getNullableStringField());
   }
