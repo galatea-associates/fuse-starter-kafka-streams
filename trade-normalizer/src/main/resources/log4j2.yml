@@ -27,7 +27,7 @@ Configuration:
         value: "%d{yyyyMMdd.HH}.%i.log.gz"
         # Log throwables (exceptions) on one line, split by the pipe delimiter
       - name: log-pattern
-        value: "%d{yyyy.MM.dd HH:mm:ss.SSS} [%t%X{StreamThread}] %-5level [%X{X-B3-TraceId}/%X{X-B3-SpanId}] %logger{1.} - %X{internal-request-id}%X{external-request-id}%msg%xThrowable{separator(|)}%n"
+        value: "%d{yyyy.MM.dd HH:mm:ss.SSS} [%t%X{StreamTask}] %-5level [%X{X-B3-TraceId}/%X{X-B3-SpanId}] %logger{1.} - %X{internal-request-id}%X{external-request-id}%msg%xThrowable{separator(|)}%n"
 
   # Create some appenders
   Appenders:
@@ -37,7 +37,7 @@ Configuration:
       name: Console
       target: SYSTEM_OUT
       PatternLayout:
-        Pattern: "%d{yyyy.MM.dd HH:mm:ss.SSS} [%t%X{StreamThread}] %-5level %logger{1.} - %X{internal-request-id}%X{external-request-id}%msg%n%xThrowable{separator(|)}"
+        Pattern: "%d{yyyy.MM.dd HH:mm:ss.SSS} [%t%X{StreamTask}] %-5level %logger{1.} - %X{internal-request-id}%X{external-request-id}%msg%n%xThrowable{separator(|)}"
 
     # Log to a specific file.
     # For details of configuration options, see: https://logging.apache.org/log4j/2.x/manual/appenders.html#RollingFileAppender

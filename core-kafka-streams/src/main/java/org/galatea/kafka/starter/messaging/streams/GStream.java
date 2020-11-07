@@ -84,12 +84,28 @@ public class GStream<K, V> {
     if (transformer.getName() != null) {
       Named named = Named.as(transformer.getName());
       transformed = inner
-          .transform(() -> new ConfiguredTransformer<>(transformer), named, storeNames);
+          .transform(() -> new FromTemplateTransformer<>(transformer), named, storeNames);
     } else {
       transformed = inner
-          .transform(() -> new ConfiguredTransformer<>(transformer), storeNames);
+          .transform(() -> new FromTemplateTransformer<>(transformer), storeNames);
     }
     return new GStream<>(transformed, newState, builder);
+  }
+
+  public <T> void process(ProcessorTemplate<K, V, T> processorTemplate) {
+
+    Collection<TaskStoreRef<?, ?>> taskStores = processorTemplate.getTaskStores();
+    createNeededStores(taskStores);
+
+    String[] storeNames = taskStores.stream().map(StoreRef::getName)
+        .toArray(String[]::new);
+
+    if (processorTemplate.getName() != null) {
+      Named named = Named.as(processorTemplate.getName());
+      inner.process(() -> new FromTemplateProcessor<>(processorTemplate), named, storeNames);
+    } else {
+      inner.process(() -> new FromTemplateProcessor<>(processorTemplate), storeNames);
+    }
   }
 
   public <V1> GStream<K, V1> mapValues(ValueMapper<K, V, V1> mapper) {

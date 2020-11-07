@@ -16,6 +16,7 @@ import org.apache.kafka.streams.state.Stores;
 import org.galatea.kafka.starter.messaging.Topic;
 import org.galatea.kafka.starter.messaging.config.StorePersistence;
 import org.galatea.kafka.starter.messaging.streams.GStream.StreamState;
+import org.galatea.kafka.starter.messaging.streams.util.StoreUpdateCallback;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -49,6 +50,11 @@ public class GStreamBuilder {
   }
 
   public <K, V> GStreamBuilder addGlobalStore(GlobalStoreRef<K, V> ref) {
+    return addGlobalStore(ref, null);
+  }
+
+  public <K, V> GStreamBuilder addGlobalStore(GlobalStoreRef<K, V> ref,
+      StoreUpdateCallback<K, V> updateCallback) {
     @NonNull Topic<K, V> topic = ref.getOnTopic();
     StorePersistence persistence = persistenceSupplier.apply(ref.getName());
     log.info("Configuring Global Store '{}' with persistence {}", ref.getName(),
@@ -57,7 +63,7 @@ public class GStreamBuilder {
     inner.addGlobalStore(
         Stores.keyValueStoreBuilder(persistence.getPersistenceSupplier().apply(ref.getName()),
             ref.getKeySerde(), ref.getValueSerde()),
-        topic.getName(), consumedWith(topic), () -> new SimpleProcessor<>(ref));
+        topic.getName(), consumedWith(topic), () -> new SimpleProcessor<>(ref, updateCallback));
     return this;
   }
 

@@ -1,29 +1,30 @@
 package org.galatea.kafka.starter.testing;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
-import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
-import lombok.RequiredArgsConstructor;
+import lombok.NonNull;
 import org.apache.kafka.streams.KeyValue;
 import org.galatea.kafka.starter.messaging.Topic;
 
 @Getter
-@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 @Builder
 public class OutputAssertion<K, V> {
 
   private final Topic<K, V> outputTopic;
+  @NonNull
   private final List<Map<String, String>> expectedRecords;
   /**
    * These fields will always be asserted. If the field does not exist in the maps in {@link
    * OutputAssertion#expectedRecords}, then it will be checked against the default value for the
    * field.
    */
-  private final Set<String> alwaysAssertFields;
+  @Builder.Default
+  private final Set<String> alwaysAssertFields = new HashSet<>();
   /**
    * Not relevant if {@link OutputAssertion#flattenToLatestValuePerKey} is true
    */
@@ -32,7 +33,8 @@ public class OutputAssertion<K, V> {
    * Only compare the last value that was output for each key
    */
   private final boolean flattenToLatestValuePerKey;
-  private final Function<KeyValue<K, V>, KeyValue<K, V>> recordCreationCallback;
+  @Builder.Default
+  private final Function<KeyValue<K, V>, KeyValue<K, V>> recordCreationCallback = kv -> kv;
 
   public static <K, V> OutputAssertionBuilder<K, V> builder(Topic<K, V> topic) {
     return new OutputAssertionBuilder<>(topic);
@@ -40,7 +42,7 @@ public class OutputAssertion<K, V> {
 
   public static class OutputAssertionBuilder<K, V> {
 
-    private final Topic<K, V> outputTopic;
+    private Topic<K, V> outputTopic;
 
     private OutputAssertionBuilder() {
       throw new UnsupportedOperationException();
