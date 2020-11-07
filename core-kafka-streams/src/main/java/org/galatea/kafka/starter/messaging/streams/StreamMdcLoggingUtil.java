@@ -9,7 +9,7 @@ import org.slf4j.MDC;
  */
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class StreamMdcLoggingUtil {
-  private static final String MDC_STREAM_THREAD_REF = "StreamThread";
+  private static final String MDC_STREAM_THREAD_REF = "StreamTask";
 
   public static void setStreamTask(String taskId) {
     MDC.put(MDC_STREAM_THREAD_REF, "-" + taskId);

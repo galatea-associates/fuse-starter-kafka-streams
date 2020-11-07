@@ -5,7 +5,7 @@ Configuration:
   Properties:
     Property:
       - name: log-pattern
-        value: "%d{yyyy.MM.dd HH:mm:ss.SSS} [%t%X{StreamThread}] %-5level [%X{X-B3-TraceId}/%X{X-B3-SpanId}] %logger{1.} - %X{internal-request-id}%X{external-request-id}%msg%xThrowable{separator(|)}%n"
+        value: "%d{yyyy.MM.dd HH:mm:ss.SSS} [%t%X{StreamTask}] %-5level [%X{X-B3-TraceId}/%X{X-B3-SpanId}] %logger{1.} - %X{internal-request-id}%X{external-request-id}%msg%xThrowable{separator(|)}%n"
 
   # Create some appenders
   Appenders:
@@ -15,7 +15,7 @@ Configuration:
       name: Console
       target: SYSTEM_OUT
       PatternLayout:
-        Pattern: "%d{yyyy.MM.dd HH:mm:ss.SSS} [%t%X{StreamThread}] %-5level %logger{1.} - %X{internal-request-id}%X{external-request-id}%msg%xThrowable{separator(|)}%n"
+        Pattern: "%d{yyyy.MM.dd HH:mm:ss.SSS} [%t%X{StreamTask}] %-5level %logger{1.} - %X{internal-request-id}%X{external-request-id}%msg%xThrowable{separator(|)}%n"
 
   Loggers:
     # Define some defaults
