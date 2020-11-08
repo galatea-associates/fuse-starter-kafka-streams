@@ -1,5 +1,0 @@
-punctuate.interval: PT180S
-
-kafka:
-  streams:
-    interceptor.classes: "org.galatea.kafka.starter.messaging.streams.partition.GProducerInterceptor"

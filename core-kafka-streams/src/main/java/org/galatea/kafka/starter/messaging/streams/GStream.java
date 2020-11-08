@@ -8,14 +8,12 @@ import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.common.header.Headers;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Named;
 import org.apache.kafka.streams.kstream.Produced;
 import org.galatea.kafka.starter.messaging.Topic;
-import org.galatea.kafka.starter.messaging.streams.domain.ConfiguredHeaders;
 import org.galatea.kafka.starter.messaging.streams.util.KeyValueMapper;
 import org.galatea.kafka.starter.messaging.streams.util.PeekAction;
 import org.galatea.kafka.starter.messaging.streams.util.ValueMapper;
@@ -56,18 +54,6 @@ public class GStream<K, V> {
     // construct new GStream to retain the current StreamState, since this won't cause any updates
     // to the state (but the transformValues by itself would update the state)
     return new GStream<>(transformedStream.inner, state, builder);
-  }
-
-  public GStream<K, V> repartitionWith(Function<K, byte[]> keyExtractor, Topic<K, V> topic) {
-    return transform(TransformerTemplate.<K, V, K, V, Object>builder()
-        .transformMethod((key, value, sp, context, forwarder, state) -> {
-          byte[] partitionKey = keyExtractor.apply(key);
-          Headers headers = context.headers();
-          headers.remove(ConfiguredHeaders.NEW_PARTITION_KEY.getKey());
-          headers.add(ConfiguredHeaders.NEW_PARTITION_KEY.getKey(), partitionKey);
-          return KeyValue.pair(key, value);
-        })
-        .build());
   }
 
   public <K1, V1, T> GStream<K1, V1> transform(
