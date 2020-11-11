@@ -6,7 +6,7 @@ import org.apache.kafka.common.serialization.Serde;
 
 @RequiredArgsConstructor
 @Value
-public class Topic<K,V> {
+public class Topic<K,V> implements SerdePairSupplier<K,V> {
 
   String name;
   Serde<K> keySerde;
