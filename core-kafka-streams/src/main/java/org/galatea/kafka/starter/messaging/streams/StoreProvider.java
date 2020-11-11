@@ -24,7 +24,7 @@ public class StoreProvider {
           TaskContext taskContext = new TaskContext(context);
           try {
             return new TaskStore<>((KeyValueStore<K, V>) context.getStateStore(name),
-                ref.getRetentionPolicy(), taskContext);
+                ref.getValidRecordPolicy(), taskContext);
           } catch (StreamsException e) {
             throw new IllegalTopologyException(String.format("Task store '%s' is not accessible from "
                 + "transformer. Must allow access by calling "

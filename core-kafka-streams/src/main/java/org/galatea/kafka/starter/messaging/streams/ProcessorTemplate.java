@@ -1,6 +1,8 @@
 package org.galatea.kafka.starter.messaging.streams;
 
 import java.util.Collection;
+import java.util.LinkedList;
+import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Builder.Default;
 import lombok.Getter;
@@ -32,6 +34,8 @@ public class ProcessorTemplate<K, V, T> {
 
   @Singular
   private final Collection<ProcessorPunctuate<T>> punctuates;
+  @Getter(AccessLevel.PACKAGE)
+  private final Collection<ProcessorPunctuate<T>> internalPunctuates = new LinkedList<>();
 
   @Default
   private final String name = null;

@@ -10,9 +10,9 @@ import org.galatea.kafka.starter.messaging.streams.util.TransformerPunctuateMeth
 @Getter
 @Builder
 @ToString
-public class TransformerPunctuate<K,V,T> {
+public class TransformerPunctuate<K, V, T> {
 
-  private final TransformerPunctuateMethod<K,V,T> method;
+  private final TransformerPunctuateMethod<K, V, T> method;
   private final Duration interval;
   @Builder.Default
   private final PunctuationType type = PunctuationType.WALL_CLOCK_TIME;

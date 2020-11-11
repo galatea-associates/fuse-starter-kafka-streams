@@ -1,8 +1,11 @@
 package org.galatea.kafka.starter.messaging.streams;
 
+import java.util.Collection;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.Getter;
@@ -16,6 +19,8 @@ import org.apache.kafka.streams.state.Stores;
 import org.galatea.kafka.starter.messaging.Topic;
 import org.galatea.kafka.starter.messaging.config.StorePersistence;
 import org.galatea.kafka.starter.messaging.streams.GStream.StreamState;
+import org.galatea.kafka.starter.messaging.streams.util.GStreamConfigs;
+import org.galatea.kafka.starter.messaging.streams.util.GStreamConfigs.Property;
 import org.galatea.kafka.starter.messaging.streams.util.StoreUpdateCallback;
 
 @Slf4j
@@ -26,9 +31,24 @@ public class GStreamBuilder {
   private final StorePersistenceSupplier persistenceSupplier;
   @Getter
   private final Set<TaskStoreRef<?, ?>> builtTaskStores = new HashSet<>();
+  private final Map<String, Object> configuration = new HashMap<>();
+
+  @Getter
+  private final Collection<TaskStoreRef<?, ?>> taskStoresWithExpirationPunctuate = new HashSet<>();
 
   private final Map<DslOperationName, AtomicInteger> operationCounters = new EnumMap<>(
       DslOperationName.class);
+
+  @SuppressWarnings("unchecked")
+  <T> T getConfig(Property<T> prop) {
+    T value = (T) configuration.get(prop.getKey());
+    return Optional.ofNullable(value).orElse(prop.getDefaultValue());
+  }
+
+  public void configure(Map<String, Object> propMap) {
+    GStreamConfigs.checkValidityOfConfig(propMap);
+    configuration.putAll(propMap);
+  }
 
   String getOperationName(DslOperationName opName) {
     return opName.getPrefix() + operationCounters

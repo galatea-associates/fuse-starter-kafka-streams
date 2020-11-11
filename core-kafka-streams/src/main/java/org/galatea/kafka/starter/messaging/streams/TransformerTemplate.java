@@ -1,6 +1,8 @@
 package org.galatea.kafka.starter.messaging.streams;
 
 import java.util.Collection;
+import java.util.LinkedList;
+import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Builder.Default;
 import lombok.Getter;
@@ -19,22 +21,24 @@ import lombok.Singular;
 @Getter
 public class TransformerTemplate<K, V, K1, V1, T> {
 
-    @Default
-    private final StateInitializer<T> stateInitializer = () -> null;
-    private final TransformMethod<K, V, K1, V1, T> transformMethod;
-    @Default
-    private final InitMethod<T> initMethod = (sp, state, context) -> {
-    };
-    @Default
-    private final CloseMethod<T> closeMethod = (sp, state, context) -> {
-    };
+  @Default
+  private final StateInitializer<T> stateInitializer = () -> null;
+  private final TransformMethod<K, V, K1, V1, T> transformMethod;
+  @Default
+  private final InitMethod<T> initMethod = (sp, state, context) -> {
+  };
+  @Default
+  private final CloseMethod<T> closeMethod = (sp, state, context) -> {
+  };
 
-    @Singular
-    private final Collection<TaskStoreRef<?, ?>> taskStores;
+  @Singular
+  private final Collection<TaskStoreRef<?, ?>> taskStores;
 
-    @Singular
-    private final Collection<TransformerPunctuate<K1, V1, T>> punctuates;
+  @Singular
+  private final Collection<TransformerPunctuate<K1, V1, T>> punctuates;
+  @Getter(AccessLevel.PACKAGE)
+  private final Collection<TransformerPunctuate<K1, V1, T>> internalPunctuates = new LinkedList<>();
 
-    @Default
-    private final String name = null;
+  @Default
+  private final String name = null;
 }

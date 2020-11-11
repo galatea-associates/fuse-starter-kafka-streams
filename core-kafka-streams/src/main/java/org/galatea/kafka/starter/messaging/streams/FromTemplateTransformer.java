@@ -33,10 +33,10 @@ class FromTemplateTransformer<K, V, K1, V1, T> implements Transformer<K, V, KeyV
     state = transformerTemplate.getStateInitializer().init();
     forwarder = pContext::forward;
 
-    // TODO: create punctuate that will clean stores using retentionPolicy
+    Collection<TransformerPunctuate<K1, V1, T>> punctuates = new LinkedList<>(transformerTemplate
+        .getPunctuates());
+    punctuates.addAll(transformerTemplate.getInternalPunctuates());
 
-    Collection<TransformerPunctuate<K1, V1, T>> punctuates = transformerTemplate
-        .getPunctuates();
     storeProvider = new StoreProvider(pContext);
 
     punctuates.forEach(p -> log.info("Scheduling punctuate {}", p));
@@ -46,8 +46,9 @@ class FromTemplateTransformer<K, V, K1, V1, T> implements Transformer<K, V, KeyV
             // any logging in punctuates should have MDC set
             StreamMdcLoggingUtil.setStreamTask(context.taskId().toString());
             punctuate.getMethod()
-                .punctuate(Instant.ofEpochMilli(timestamp), context, forwarder, state);
-            StreamMdcLoggingUtil.setStreamTask(context.taskId().toString());
+                .punctuate(Instant.ofEpochMilli(timestamp), context, state, storeProvider,
+                    forwarder);
+            StreamMdcLoggingUtil.removeStreamTask();
           });
       scheduledPunctuates.add(scheduled);
     }

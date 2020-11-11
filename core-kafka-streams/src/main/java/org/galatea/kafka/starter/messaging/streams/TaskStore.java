@@ -7,42 +7,57 @@ import lombok.RequiredArgsConstructor;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.state.KeyValueIterator;
 import org.apache.kafka.streams.state.KeyValueStore;
-import org.galatea.kafka.starter.messaging.streams.util.RetentionPolicy;
+import org.galatea.kafka.starter.messaging.streams.util.ValidRecordPolicy;
 
 @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 public class TaskStore<K, V> implements KafkaStreamsStore<K, V> {
 
   private final KeyValueStore<K, V> inner;
-  private final RetentionPolicy<K, V> retentionPolicy;
+  private final ValidRecordPolicy<K, V> validRecordPolicy;
   private final TaskContext taskContext;
 
   @Override
   public Optional<V> get(K key) {
     V raw = inner.get(key);
-    if (raw != null && retentionPolicy != null
-        && !retentionPolicy.shouldKeep(key, raw, taskContext)) {
+    if (raw == null || validRecordPolicy == null || validRecordPolicy
+        .shouldKeep(key, raw, taskContext)) {
+      return Optional.ofNullable(raw);
+    } else {
       inner.delete(key);
-      raw = null;
+      return Optional.empty();
     }
-    return Optional.ofNullable(raw);
   }
 
   @Override
   public void all(Consumer<KeyValue<K, V>> consumer) {
     try (KeyValueIterator<K, V> iter = inner.all()) {
-      iter.forEachRemaining(consumer);
+      filterIterator(consumer, iter);
     }
   }
+
 
   @Override
   public void range(Range<K> range, Consumer<KeyValue<K, V>> consumer) {
     try (KeyValueIterator<K, V> iter = inner.range(range.from(), range.to())) {
-      iter.forEachRemaining(consumer);
+      filterIterator(consumer, iter);
     }
   }
 
+  private void filterIterator(Consumer<KeyValue<K, V>> consumer, KeyValueIterator<K, V> iter) {
+    iter.forEachRemaining(kv -> {
+      if (validRecordPolicy == null || validRecordPolicy
+          .shouldKeep(kv.key, kv.value, taskContext)) {
+        consumer.accept(kv);
+      } else {
+        delete(kv.key);
+      }
+    });
+  }
+
   public void put(K key, V value) {
-    inner.put(key, value);
+    if (validRecordPolicy == null || validRecordPolicy.shouldKeep(key, value, taskContext)) {
+      inner.put(key, value);
+    }
   }
 
   public void delete(K key) {

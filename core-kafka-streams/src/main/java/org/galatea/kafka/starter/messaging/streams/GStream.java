@@ -1,7 +1,12 @@
 package org.galatea.kafka.starter.messaging.streams;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -14,6 +19,7 @@ import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Named;
 import org.apache.kafka.streams.kstream.Produced;
 import org.galatea.kafka.starter.messaging.Topic;
+import org.galatea.kafka.starter.messaging.streams.util.GStreamConfigs;
 import org.galatea.kafka.starter.messaging.streams.util.KeyValueMapper;
 import org.galatea.kafka.starter.messaging.streams.util.PeekAction;
 import org.galatea.kafka.starter.messaging.streams.util.ValueMapper;
@@ -66,6 +72,11 @@ public class GStream<K, V> {
         .toArray(String[]::new);
     StreamState<K1, V1> newState = StreamState.<K1, V1>builder().keyDirty(true).build();
 
+    Optional<ProcessorPunctuate<T>> expiryPunctuate = getExpirationPunctuate(taskStores);
+    Optional<TransformerPunctuate<K1, V1, T>> transformerPunctuate = expiryPunctuate
+        .map(GStream::adaptPunctuate);
+    transformerPunctuate.ifPresent(p -> transformer.getInternalPunctuates().add(p));
+
     KStream<K1, V1> transformed;
     if (transformer.getName() != null) {
       Named named = Named.as(transformer.getName());
@@ -78,6 +89,15 @@ public class GStream<K, V> {
     return new GStream<>(transformed, newState, builder);
   }
 
+  private static <K1, V1, T> TransformerPunctuate<K1, V1, T> adaptPunctuate(
+      ProcessorPunctuate<T> processorPunctuate) {
+    return TransformerPunctuate.<K1, V1, T>builder()
+        .method((timestamp, taskContext, state, sp, forwarder) -> processorPunctuate.getMethod()
+            .punctuate(timestamp, taskContext, state, sp))
+        .interval(processorPunctuate.getInterval())
+        .build();
+  }
+
   public <T> void process(ProcessorTemplate<K, V, T> processorTemplate) {
 
     Collection<TaskStoreRef<?, ?>> taskStores = processorTemplate.getTaskStores();
@@ -86,12 +106,73 @@ public class GStream<K, V> {
     String[] storeNames = taskStores.stream().map(StoreRef::getName)
         .toArray(String[]::new);
 
+    Optional<ProcessorPunctuate<T>> expiryPunctuate = getExpirationPunctuate(taskStores);
+    expiryPunctuate
+        .ifPresent(punctuate -> processorTemplate.getInternalPunctuates().add(punctuate));
+
     if (processorTemplate.getName() != null) {
       Named named = Named.as(processorTemplate.getName());
       inner.process(() -> new FromTemplateProcessor<>(processorTemplate), named, storeNames);
     } else {
       inner.process(() -> new FromTemplateProcessor<>(processorTemplate), storeNames);
     }
+  }
+
+  private <T> Optional<ProcessorPunctuate<T>> getExpirationPunctuate(
+      Collection<TaskStoreRef<?, ?>> taskStores) {
+    HashSet<TaskStoreRef<?, ?>> storeRefsWithoutExpiryPunctuate = new HashSet<>(taskStores);
+
+    // remove task stores without defined policies
+    storeRefsWithoutExpiryPunctuate.removeIf(t -> t.getValidRecordPolicy() == null);
+    // remove task stores that have been defined already
+    storeRefsWithoutExpiryPunctuate.removeAll(builder.getTaskStoresWithExpirationPunctuate());
+
+    if (!storeRefsWithoutExpiryPunctuate.isEmpty()) {
+      // update the collection of stores with punctuates - so multiple punctuates won't be defined
+      // for cleaning the same store
+      builder.getTaskStoresWithExpirationPunctuate().addAll(storeRefsWithoutExpiryPunctuate);
+      return Optional.of(cleanStorePunctuate(storeRefsWithoutExpiryPunctuate));
+    }
+    return Optional.empty();
+  }
+
+  private <T> ProcessorPunctuate<T> cleanStorePunctuate(HashSet<TaskStoreRef<?, ?>> storeRefs) {
+    return ProcessorPunctuate.<T>builder()
+        .method((timestamp, taskContext, state, sp) -> {
+          log.info("Running store-cleaning punctuate");
+          Instant punctuateStartTime = Instant.now();
+          long numberStores = 0;
+          long totalCleanedRecords = 0;
+          for (TaskStoreRef<?, ?> storeRef : storeRefs) {
+            log.info("Cleaning store {}", storeRef.getName());
+            numberStores++;
+            Instant startTime = Instant.now();
+
+            long cleanedRecords = cleanStore(taskContext, sp, storeRef);
+            totalCleanedRecords += cleanedRecords;
+            log.info("Cleaned {} records from store {} in {}", cleanedRecords, storeRef.getName(),
+                Duration.between(startTime, Instant.now()));
+          }
+          log.info("Completed cleaning {} records from {} stores in {}", totalCleanedRecords,
+              numberStores, Duration.between(punctuateStartTime, Instant.now()));
+
+        })
+        .interval(builder.getConfig(GStreamConfigs.STORE_EXPIRATION_PUNCTUATE_INTERVAL))
+        .build();
+  }
+
+  private <K1, V1> long cleanStore(TaskContext taskContext, StoreProvider sp,
+      TaskStoreRef<K1, V1> storeRef) {
+    AtomicLong cleanedRecords = new AtomicLong(0);
+    TaskStore<K1, V1> store = sp.store(storeRef);
+    store.all(kv -> {
+      if (!storeRef.getValidRecordPolicy().shouldKeep(kv.key, kv.value, taskContext)) {
+        store.delete(kv.key);
+        log.trace("Removing expired entry from store {}: {}", storeRef.getName(), kv);
+        cleanedRecords.incrementAndGet();
+      }
+    });
+    return cleanedRecords.get();
   }
 
   public <V1> GStream<K, V1> mapValues(ValueMapper<K, V, V1> mapper) {

@@ -26,10 +26,8 @@ class FromTemplateProcessor<K, V, T> implements Processor<K, V> {
 
     state = processorTemplate.getStateInitializer().init();
 
-    // TODO: create punctuate that will clean stores using retentionPolicy
-
-    Collection<ProcessorPunctuate<T>> punctuates = processorTemplate
-        .getPunctuates();
+    Collection<ProcessorPunctuate<T>> punctuates = new LinkedList<>(processorTemplate.getPunctuates());
+    punctuates.addAll(processorTemplate.getInternalPunctuates());
     storeProvider = new StoreProvider(pContext);
 
     punctuates.forEach(p -> log.info("Scheduling punctuate {}", p));
@@ -38,7 +36,7 @@ class FromTemplateProcessor<K, V, T> implements Processor<K, V> {
           timestamp -> {
             StreamMdcLoggingUtil.setStreamTask(context.taskId().toString());
             punctuate.getMethod()
-                .punctuate(Instant.ofEpochMilli(timestamp), context, state);
+                .punctuate(Instant.ofEpochMilli(timestamp), context, state, storeProvider);
             StreamMdcLoggingUtil.removeStreamTask();
           });
       scheduledPunctuates.add(scheduled);
