@@ -14,12 +14,12 @@ Feature: Security Normalization
       | securityId | qty |
       | secId      | 10  |
 
-
-  Scenario: 2 - trade security does not exist
-
-    Given receive the following trade records:
-      | isin    | qty |
-      | secIsin | 10  |
-
-    Then output the following trade records:
-      | securityId | qty |
+#
+#  Scenario: 2 - trade security does not exist
+#
+#    Given receive the following trade records:
+#      | isin    | qty |
+#      | secIsin | 10  |
+#
+#    Then output the following trade records:
+#      | securityId | qty |

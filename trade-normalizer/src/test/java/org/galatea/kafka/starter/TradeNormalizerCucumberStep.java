@@ -5,6 +5,7 @@ import io.cucumber.datatable.DataTable;
 import io.cucumber.java.Before;
 import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
+import java.util.Arrays;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.specific.SpecificRecord;
@@ -20,7 +21,7 @@ import org.galatea.kafka.starter.messaging.trade.input.InputTradeMsgKey;
 import org.galatea.kafka.starter.messaging.trade.input.InputTradeMsgValue;
 import org.galatea.kafka.starter.streams.StreamController;
 import org.galatea.kafka.starter.streams.StreamControllerTestHelper;
-import org.galatea.kafka.starter.testing.TopologyTester;
+import org.galatea.kafka.starter.testing.PartitionedTopologyTester;
 import org.galatea.kafka.starter.testing.avro.AvroPostProcessor;
 import org.junit.Ignore;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -49,14 +50,17 @@ public class TradeNormalizerCucumberStep {
   @MockBean
   private KafkaStreamsStarter mockStreamsStarter;   // mock KafkaStreamsStarter, so
 
-  private static TopologyTester tester;
+  private static PartitionedTopologyTester tester;
 
   @Before
   public void setup(Scenario scenario) {
 
+    // TODO: try to compare the global task topology tree between TopologyTester and TopologyTester2
     if (tester == null) {
       Topology topology = StreamControllerTestHelper.buildTopology(controller);
-      tester = new TopologyTester(topology, properties.asProperties());
+      tester = new PartitionedTopologyTester(topology, properties.asProperties(), Arrays
+          .asList(inputTradeTopic.getName(), securityTopic.getName(),
+              normalizedTradeTopic.getName()));
       tester.configureInputTopic(securityTopic, SecurityIsinMsgKey::new, SecurityMsgValue::new);
       tester.configureInputTopic(inputTradeTopic, InputTradeMsgKey::new, InputTradeMsgValue::new);
       tester.configureOutputTopic(normalizedTradeTopic, TradeMsgKey::new, TradeMsgValue::new);

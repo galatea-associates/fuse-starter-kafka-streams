@@ -29,11 +29,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
+import org.apache.kafka.streams.MockClusterBuilder;
+import org.apache.kafka.streams.PartitionedTestInputTopic;
+import org.apache.kafka.streams.PartitionedTestOutputTopic;
+import org.apache.kafka.streams.PartitionedTopologyTestDriver;
 import org.apache.kafka.streams.StreamsConfig;
-import org.apache.kafka.streams.TestInputTopic;
-import org.apache.kafka.streams.TestOutputTopic;
 import org.apache.kafka.streams.Topology;
-import org.apache.kafka.streams.TopologyTestDriver;
+import org.apache.kafka.streams.processor.StateStore;
 import org.apache.kafka.streams.state.KeyValueIterator;
 import org.apache.kafka.streams.state.KeyValueStore;
 import org.apache.kafka.streams.state.QueryableStoreType;
@@ -45,15 +47,18 @@ import org.springframework.util.FileSystemUtils;
 import org.unitils.reflectionassert.ReflectionComparatorMode;
 
 @Slf4j
-public class TopologyTester implements Closeable {
+public class PartitionedTopologyTester implements Closeable {
 
   @Getter
-  private final TopologyTestDriver driver;
+  private final PartitionedTopologyTestDriver driver;
   private final Map<String, TopicConfig<?, ?>> inputTopicConfig = new HashMap<>();
+  private final Map<String, PartitionedTestInputTopic<?, ?>> inputTopics = new HashMap<>();
   private final Map<String, TopicConfig<?, ?>> outputTopicConfig = new HashMap<>();
+  private final Map<String, PartitionedTestOutputTopic<?, ?>> outputTopics = new HashMap<>();
   private final Map<String, TopicConfig<?, ?>> storeConfig = new HashMap<>();
   private final Set<Class<?>> beanClasses = new HashSet<>();
 
+  private static final int NUM_PARTITIONS = 10;
   @Getter
   private final ConversionUtil typeConversionUtil = new ConversionUtil();
   private final Map<Class<?>, RecordPostProcessor<?>> postProcessors = new HashMap<>();
@@ -73,7 +78,15 @@ public class TopologyTester implements Closeable {
     postProcessors.put(forClass, processor);
   }
 
-  public TopologyTester(Topology topology, Properties streamProperties) {
+  //TODO: handle auto-created topics, like repartition topics?
+  public PartitionedTopologyTester(Topology topology, Properties streamProperties,
+      Collection<String> topicNames) {
+    MockClusterBuilder clusterBuilder = new MockClusterBuilder()
+        .withDefaultPartitions(NUM_PARTITIONS);
+
+    // add all topics to the clusterBuilder with NUM_PARTITIONS
+    topicNames.forEach(clusterBuilder::withTopic);
+
     String stateDir =
         streamProperties.getProperty(StreamsConfig.STATE_DIR_CONFIG) + "/" + streamProperties
             .getProperty(StreamsConfig.APPLICATION_ID_CONFIG);
@@ -81,10 +94,12 @@ public class TopologyTester implements Closeable {
     if (dirFile.exists() && !FileSystemUtils.deleteRecursively(dirFile)) {
       log.error("Was unable to delete state dir before tests: {}", stateDir);
     }
-    driver = new TopologyTestDriver(topology, streamProperties);
+
+    driver = new PartitionedTopologyTestDriver(topology, streamProperties, clusterBuilder.build());
     log.info("Initiated new TopologyTester with application ID: {}",
         streamProperties.getProperty(StreamsConfig.APPLICATION_ID_CONFIG));
   }
+
 
   /**
    * Register class/interface to be treated as a bean. If not registered, the class will be created
@@ -97,21 +112,26 @@ public class TopologyTester implements Closeable {
   public void beforeTest() {
     outputTopicConfig.forEach((topicName, topicConfig) -> readOutput(topicConfig));
 
-//    for (Entry<String, StateStore> e : driver.getAllStateStores().entrySet()) {
-//      String storeName = e.getKey();
-//      KeyValueStore<Object, ?> kvStore = (KeyValueStore<Object, ?>) e.getValue();
-//      try (KeyValueIterator<Object, ?> iter = kvStore.all()) {
-//        while (iter.hasNext()) {
-//          KeyValue<Object, ?> entry = iter.next();
-//          log.info("Deleting entry in {}: {}", storeName, entry);
-//          kvStore.delete(entry.key);
-//        }
-//
-//        // TODO: clear store caches that are created by kafka streams internal stores
-//
-//        kvStore.flush();
-//      }
-//    }
+    for (Entry<String, Collection<StateStore>> e : driver.getAllStateStores().entrySet()) {
+      e.getValue().forEach(this::clearStore);
+    }
+  }
+
+  private void clearStore(StateStore stateStore) {
+    if (!KeyValueStore.class.isAssignableFrom(stateStore.getClass())) {
+      return;
+    }
+    KeyValueStore<Object, Object> kvStore = (KeyValueStore<Object, Object>) stateStore;
+    try (KeyValueIterator<Object, Object> iter = kvStore.all()) {
+      log.info("Cleaning store {}", stateStore.name());
+      while (iter.hasNext()) {
+        KeyValue<Object, Object> entry = iter.next();
+        log.info("Deleting entry in {}: {}", stateStore.name(), entry);
+        kvStore.delete(entry.key);
+      }
+
+      kvStore.flush();
+    }
   }
 
   public <K, V> void purgeMessagesInOutput(Topic<K, V> topic) {
@@ -136,41 +156,49 @@ public class TopologyTester implements Closeable {
   public <K, V> TopicConfig<K, V> configureInputTopic(Topic<K, V> topic,
       Callable<K> createEmptyKey, Callable<V> createEmptyValue) {
 
+    inputTopics.put(topic.getName(), driver
+        .createInputTopic(topic.getName(), topic.getKeySerde().serializer(),
+            topic.getValueSerde().serializer()));
+
     if (inputTopicConfig.containsKey(topic.getName())) {
       throw new IllegalStateException(
           String.format("Input topic %s cannot be configured more than once", topic.getName()));
     }
     inputTopicConfig.put(topic.getName(),
         new TopicConfig<>(topic.getName(), topic.getKeySerde(), topic.getValueSerde(),
-            createEmptyKey, createEmptyValue, testInputTopic(topic)));
+            createEmptyKey, createEmptyValue));
     return inputTopicConfig(topic);
   }
 
-  private <K, V> TestInputTopic<K, V> testInputTopic(Topic<K, V> topic) {
+  private <K, V> PartitionedTestInputTopic<K, V> testInputTopic(Topic<K, V> topic) {
     return driver.createInputTopic(topic.getName(), topic.getKeySerde().serializer(),
         topic.getValueSerde().serializer());
   }
 
-  private <K, V> TestOutputTopic<K, V> testOutputTopic(Topic<K, V> topic) {
+  private <K, V> PartitionedTestOutputTopic<K, V> testOutputTopic(Topic<K, V> topic) {
     return driver.createOutputTopic(topic.getName(), topic.getKeySerde().deserializer(),
         topic.getValueSerde().deserializer());
   }
 
   public <K, V> TopicConfig<K, V> configureOutputTopic(Topic<K, V> topic,
       Callable<K> createEmptyKey, Callable<V> createEmptyValue) {
+
+    outputTopics.put(topic.getName(), driver
+        .createOutputTopic(topic.getName(), topic.getKeySerde().deserializer(),
+            topic.getValueSerde().deserializer()));
+
     if (outputTopicConfig.containsKey(topic.getName())) {
       throw new IllegalStateException(
           String.format("Output topic %s cannot be configured more than once", topic.getName()));
     }
-    outputTopicConfig.put(topic.getName(),
-        new TopicConfig<>(topic.getName(), topic.getKeySerde(), topic.getValueSerde(),
-            createEmptyKey, createEmptyValue, testOutputTopic(topic)));
+    TopicConfig<?, ?> config = new TopicConfig<>(topic.getName(), topic.getKeySerde(),
+        topic.getValueSerde(), createEmptyKey, createEmptyValue);
+    outputTopicConfig.put(topic.getName(), config);
     return outputTopicConfig(topic);
   }
 
   public <K, V> TopicConfig<K, V> configureStore(String storeName, Serde<K> keySerde,
-      Serde<V> valueSerde,
-      Callable<K> createEmptyKey, Callable<V> createEmptyValue) {
+      Serde<V> valueSerde, Callable<K> createEmptyKey, Callable<V> createEmptyValue) {
     if (storeConfig.containsKey(storeName)) {
       throw new IllegalStateException(
           String.format("Store %s cannot be configured more than once", storeName));
@@ -206,9 +234,25 @@ public class TopologyTester implements Closeable {
     if (recordCreationCallback != null) {
       record = recordCreationCallback.apply(record);
     }
-    log.info("{} Piping record into topology on topic {}: {}", TopologyTester.class.getSimpleName(),
+    log.info("{} Piping record into topology on topic {}: {}",
+        PartitionedTopologyTester.class.getSimpleName(),
         topic.getName(), record);
-    topicConfig.getConfiguredInput().pipeInput(record.key, record.value);
+    PartitionedTestInputTopic<K, V> testInputTopic = (PartitionedTestInputTopic<K, V>) inputTopics.get(topic.getName());
+    testInputTopic.pipeInput(record.key, record.value);
+  }
+
+  private <K, V> void createInputTopic(String topicName, TopicConfig<K, V> config) {
+    PartitionedTestInputTopic<K, V> topic = driver
+        .createInputTopic(topicName, config.getKeySerde().serializer(),
+            config.getValueSerde().serializer());
+    inputTopics.putIfAbsent(topicName, topic);
+  }
+
+  private <K, V> void createOutputTopic(String topicName, TopicConfig<K, V> config) {
+    PartitionedTestOutputTopic<K, V> topic = driver
+        .createOutputTopic(topicName, config.getKeySerde().deserializer(),
+            config.getValueSerde().deserializer());
+    outputTopics.putIfAbsent(topicName, topic);
   }
 
   private <V, K> boolean keyIsBean(TopicConfig<K, V> topicConfig) throws Exception {
@@ -524,7 +568,9 @@ public class TopologyTester implements Closeable {
   }
 
   private <K, V> List<KeyValue<K, V>> readOutput(TopicConfig<K, V> config) {
-    return config.getConfiguredOutput().readKeyValuesToList();
+    PartitionedTestOutputTopic<K, V> testOutputTopic = (PartitionedTestOutputTopic<K, V>) outputTopics
+        .get(config.getTopicName());
+    return testOutputTopic.readKeyValuesToList();
   }
 
   @SuppressWarnings("unchecked")

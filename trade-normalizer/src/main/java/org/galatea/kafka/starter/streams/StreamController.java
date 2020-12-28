@@ -27,7 +27,7 @@ public class StreamController extends BaseStreamingService {
   private final Topic<SecurityIsinMsgKey, SecurityMsgValue> securityTopic;
   private final Topic<TradeMsgKey, TradeMsgValue> normalizedTradeTopic;
 
-  protected Topology buildTopology() {
+  public Topology buildTopology() {
 
     StreamsBuilder builder = new StreamsBuilder();
 
