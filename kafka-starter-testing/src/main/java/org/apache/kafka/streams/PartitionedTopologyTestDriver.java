@@ -41,13 +41,11 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import lombok.Builder;
 import lombok.NonNull;
-import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.clients.consumer.OffsetResetStrategy;
 import org.apache.kafka.clients.producer.NewMockProducer;
 import org.apache.kafka.clients.producer.Partitioner;
-import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.internals.DefaultPartitioner;
 import org.apache.kafka.common.Metric;
@@ -94,10 +92,8 @@ import org.apache.kafka.streams.state.KeyValueStore;
 import org.apache.kafka.streams.state.ReadOnlyKeyValueStore;
 import org.apache.kafka.streams.state.ReadOnlySessionStore;
 import org.apache.kafka.streams.state.ReadOnlyWindowStore;
-import org.apache.kafka.streams.state.SessionStore;
 import org.apache.kafka.streams.state.TimestampedKeyValueStore;
 import org.apache.kafka.streams.state.TimestampedWindowStore;
-import org.apache.kafka.streams.state.WindowStore;
 import org.apache.kafka.streams.state.internals.ThreadCache;
 import org.apache.kafka.streams.state.internals.metrics.RocksDBMetricsRecordingTrigger;
 import org.apache.kafka.streams.test.TestRecord;
@@ -105,97 +101,6 @@ import org.galatea.kafka.starter.util.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * This class makes it easier to write tests to verify the behavior of topologies created with
- * {@link Topology} or {@link StreamsBuilder}. You can test simple topologies that have a single
- * processor, or very complex topologies that have multiple sources, processors, sinks, or
- * sub-topologies. Best of all, the class works without a real Kafka broker, so the tests execute
- * very quickly with very little overhead.
- * <p>
- * Using the {@code TopologyTestDriver} in tests is easy: simply instantiate the driver and provide
- * a {@link Topology} (cf. {@link StreamsBuilder#build()}) and {@link Properties configs}, {@link
- * #createInputTopic(String, Serializer, Serializer) create} and use a {@link
- * PartitionedTestInputTopic} to supply an input records to the topology, and then {@link
- * #createOutputTopic(String, Deserializer, Deserializer) create} and use a {@link
- * PartitionedTestOutputTopic} to read and verify any output records by the topology.
- * <p>
- * Although the driver doesn't use a real Kafka broker, it does simulate Kafka {@link Consumer
- * consumers} and {@link Producer producers} that read and write raw {@code byte[]} messages. You
- * can let {@link PartitionedTestInputTopic} and {@link PartitionedTestOutputTopic} to handle
- * conversion form regular Java objects to raw bytes.
- *
- * <h2>Driver setup</h2>
- * In order to create a {@code TopologyTestDriver} instance, you need a {@link Topology} and a
- * {@link Properties config}. The configuration needs to be representative of what you'd supply to
- * the real topology, so that means including several key properties (cf. {@link StreamsConfig}).
- * For example, the following code fragment creates a configuration that specifies a local Kafka
- * broker list (which is needed but not used), a timestamp extractor, and default serializers and
- * deserializers for string keys and values:
- *
- * <pre>{@code
- * Properties props = new Properties();
- * props.setProperty(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9091");
- * props.setProperty(StreamsConfig.DEFAULT_TIMESTAMP_EXTRACTOR_CLASS_CONFIG, CustomTimestampExtractor.class.getName());
- * props.setProperty(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass().getName());
- * props.setProperty(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass().getName());
- * Topology topology = ...
- * TopologyTestDriver driver = new TopologyTestDriver(topology, props);
- * }</pre>
- *
- * <h2>Processing messages</h2>
- * <p>
- * Your test can supply new input records on any of the topics that the topology's sources consume.
- * This test driver simulates single-partitioned input topics. Here's an example of an input message
- * on the topic named {@code input-topic}:
- *
- * <pre>{@code
- * TestInputTopic<String, String> inputTopic = driver.createInputTopic("input-topic", stringSerdeSerializer, stringSerializer);
- * inputTopic.pipeInput("key1", "value1");
- * }</pre>
- *
- * When {@link PartitionedTestInputTopic#pipeInput(Object, Object)} is called, the driver passes the
- * input message through to the appropriate source that consumes the named topic, and will invoke
- * the processor(s) downstream of the source. If your topology's processors forward messages to
- * sinks, your test can then consume these output messages to verify they match the expected
- * outcome. For example, if our topology should have generated 2 messages on {@code output-topic-1}
- * and 1 message on {@code output-topic-2}, then our test can obtain these messages using the {@link
- * PartitionedTestOutputTopic#readKeyValue()}  method:
- *
- * <pre>{@code
- * TestOutputTopic<String, String> outputTopic1 = driver.createOutputTopic("output-topic-1", stringDeserializer, stringDeserializer);
- * TestOutputTopic<String, String> outputTopic2 = driver.createOutputTopic("output-topic-2", stringDeserializer, stringDeserializer);
- *
- * KeyValue<String, String> record1 = outputTopic1.readKeyValue();
- * KeyValue<String, String> record2 = outputTopic2.readKeyValue();
- * KeyValue<String, String> record3 = outputTopic1.readKeyValue();
- * }</pre>
- *
- * Again, our example topology generates messages with string keys and values, so we supply our
- * string deserializer instance for use on both the keys and values. Your test logic can then verify
- * whether these output records are correct.
- * <p>
- * Note, that calling {@code pipeInput()} will also trigger {@link PunctuationType#STREAM_TIME
- * event-time} base {@link ProcessorContext#schedule(Duration, PunctuationType, Punctuator)
- * punctuation} callbacks. However, you won't trigger {@link PunctuationType#WALL_CLOCK_TIME
- * wall-clock} type punctuations that you must trigger manually via {@link
- * #advanceWallClockTime(long)}.
- * <p>
- * Finally, when completed, make sure your tests {@link #close()} the driver to release all
- * resources and {@link org.apache.kafka.streams.processor.Processor processors}.
- *
- * <h2>Processor state</h2>
- * <p>
- * Some processors use Kafka {@link StateStore state storage}, so this driver class provides the
- * generic {@link #getStateStore(String)} as well as store-type specific methods so that your tests
- * can check the underlying state store(s) used by your topology's processors. In our previous
- * example, after we supplied a single input message and checked the three output messages, our test
- * could also check the key value store to verify the processor correctly added, removed, or updated
- * internal state. Or, our test might have pre-populated some state <em>before</em> submitting the
- * input message, and verified afterward that the processor(s) correctly updated the state.
- *
- * @see PartitionedTestInputTopic
- * @see PartitionedTestOutputTopic
- */
 public class PartitionedTopologyTestDriver implements Closeable {
 
   private static final Logger log = LoggerFactory.getLogger(PartitionedTopologyTestDriver.class);
@@ -544,6 +449,8 @@ public class PartitionedTopologyTestDriver implements Closeable {
     do {
       recordsToProcess = false;
 
+// 2020-12-28 Update: iterate through all tasks as long as there are records to process,
+//  since a record may be repartitioned into another task
       for (StreamTask task : tasks) {
         if (task.hasRecordsQueued()) {
 
@@ -594,11 +501,14 @@ public class PartitionedTopologyTestDriver implements Closeable {
     }
   }
 
+// TODO: rename this to not include "pattern"
   private TopicPartition getInputTopicOrPatternPartition(final String topicName, int partition) {
     if (!internalTopologyBuilder.sourceTopicNames().isEmpty()) {
       validateSourceTopicNameRegexPattern(topicName);
     }
 
+// 2020-12-28 Update: No longer supports input topic patterns here, since
+//  MockCluster "creates" any topics that are requested.
     List<PartitionInfo> partitions = cluster.availablePartitionsForTopic(topicName);
     if (!partitions.isEmpty()) {
       return new TopicPartition(topicName, partition);
@@ -620,6 +530,7 @@ public class PartitionedTopologyTestDriver implements Closeable {
       // Forward back into the topology if the produced record is to an internal or a source topic ...
       final String outputTopicName = record.topic();
 
+// 2020-12-28 Update: use record partition to get specific TopicPartition
       final TopicPartition inputTopicOrPatternPartition = getInputTopicOrPatternPartition(
           outputTopicName, record.partition());
       final TopicPartition globalInputTopicPartition = getGlobalTopicOrPatternPartition(
@@ -646,6 +557,7 @@ public class PartitionedTopologyTestDriver implements Closeable {
     }
   }
 
+// TODO: remove
   /**
    * {@link NewMockProducer#history()} doesn't record the assigned partition for "produced" records, so
    * need to use the provided {@link Partitioner} directly here
@@ -687,6 +599,7 @@ public class PartitionedTopologyTestDriver implements Closeable {
   public void advanceWallClockTime(final Duration advance) {
     Objects.requireNonNull(advance, "advance cannot be null");
     mockWallClockTime.sleep(advance.toMillis());
+    // 2020-12-28 Update: update each stream task time
     for (StreamTask task : tasks) {
       if (task != null) {
         task.maybePunctuateSystemTime();
@@ -734,8 +647,7 @@ public class PartitionedTopologyTestDriver implements Closeable {
     final K key = keyDeserializer.deserialize(record.topic(), record.key());
     final V value = valueDeserializer.deserialize(record.topic(), record.value());
     return new ProducerRecord<>(record.topic(), record.partition(), record.timestamp(), key,
-        value,
-        record.headers());
+        value, record.headers());
   }
 
   private Queue<ProducerRecord<byte[], byte[]>> getRecordsQueue(final String topicName) {
@@ -760,6 +672,8 @@ public class PartitionedTopologyTestDriver implements Closeable {
    * @param <V> the value type
    * @return {@link PartitionedTestInputTopic} object
    */
+   // 2020-12-28 Update: use PartitionedTestInputTopic instead of TestInputTopic
+   //  because of the new class PartitionedTopologyTestDriver
   public final <K, V> PartitionedTestInputTopic<K, V> createInputTopic(final String topicName,
       final Serializer<K> keySerializer,
       final Serializer<V> valueSerializer) {
@@ -777,6 +691,8 @@ public class PartitionedTopologyTestDriver implements Closeable {
    * @param <V> the value type
    * @return {@link PartitionedTestOutputTopic} object
    */
+   // 2020-12-28 Update: use PartitionedTestOutputTopic instead of TestOutputTopic
+   //  because of the new class PartitionedTopologyTestDriver
   public final <K, V> PartitionedTestOutputTopic<K, V> createOutputTopic(final String topicName,
       final Deserializer<K> keyDeserializer,
       final Deserializer<V> valueDeserializer) {
@@ -827,6 +743,10 @@ public class PartitionedTopologyTestDriver implements Closeable {
       throw new IllegalStateException(
           "Provided `TestRecord` does not have a timestamp and no timestamp overwrite was provided via `time` parameter.");
     }
+
+    // 2020-12-28 Update: create topic in cluster before getting an immutable
+    //  cluster representation for the partitioner. Determine partition and pass
+    //  into pipeRecord so it can be assigned to the correct task
     cluster.createTopic(topic);
     int partition = partitioner
         .partition(topic, record.key(), serializedKey, record.value(), serializedValue,
@@ -863,9 +783,9 @@ public class PartitionedTopologyTestDriver implements Closeable {
    * corresponding typed methods like {@link #getKeyValueStore(String)} etc.
    *
    * @return all stores my name
-   * @see #getStateStore(String)
    * @see #getKeyValueStore(String)
    */
+   // 2020-12-28 Update: return collection of stores for each name, one per Stream Task
   public Map<String, Collection<StateStore>> getAllStateStores() {
 
     final Map<String, Collection<StateStore>> allStores = new HashMap<>();
@@ -880,25 +800,10 @@ public class PartitionedTopologyTestDriver implements Closeable {
     return allStores;
   }
 
-  /**
-   * Get the {@link StateStore} with the given name. The store can be a "regular" or global store.
-   * <p>
-   * Should be used for custom stores only. For built-in stores, the corresponding typed methods
-   * like {@link #getKeyValueStore(String)} should be used.
-   * <p>
-   * This is often useful in test cases to pre-populate the store before the test case instructs the
-   * topology to process an input message, and/or to check the store afterward.
-   *
-   * @param name the name of the store
-   * @return the state store, or {@code null} if no store has been registered with the given name
-   * @throws IllegalArgumentException if the store is a built-in store like {@link KeyValueStore},
-   * {@link WindowStore}, or {@link SessionStore}
-   * @see #getKeyValueStore(String)
-   */
-  public StateStore getStateStore(final String name) throws IllegalArgumentException {
-    throw new UnsupportedOperationException();
-  }
+  // 2020-12-28 Update: remove method StateStore getStateStore(name) because with multiple
+  //  tasks you cannot get a single mutable store
 
+// 2020-12-28 Update:  add StreamTask argument in order to retrieve a single store based on name
   private StateStore getStateStore(final String name,
       final boolean throwForBuiltInStores, StreamTask task) {
 
@@ -927,6 +832,7 @@ public class PartitionedTopologyTestDriver implements Closeable {
     return null;
   }
 
+// 2020-12-28 Update: add method, in order to get all state stores for a given name
   private Collection<StateStore> getStateStores(final String name,
       final boolean throwForBuiltInStores) {
 
@@ -972,8 +878,9 @@ public class PartitionedTopologyTestDriver implements Closeable {
    * @param name the name of the store
    * @return the key value store, or {@code null} if no {@link KeyValueStore} or {@link
    * TimestampedKeyValueStore} has been registered with the given name
-   * @see #getStateStore(String)
    */
+   // 2020-12-28 Update: make the returned store a read-only store that is an
+   //  aggregate store of all the underlying task stores
   @SuppressWarnings("unchecked")
   public <K, V> KeyValueStore<K, V> getKeyValueStore(final String name) {
     Collection<StateStore> stores = getStateStores(name, false);
@@ -993,118 +900,14 @@ public class PartitionedTopologyTestDriver implements Closeable {
     return aggStore;
   }
 
-  /**
-   * Get the {@link TimestampedKeyValueStore} with the given name. The store can be a "regular" or
-   * global store.
-   * <p>
-   * This is often useful in test cases to pre-populate the store before the test case instructs the
-   * topology to process an input message, and/or to check the
-   * store afterward.
-   *
-   * @param name the name of the store
-   * @return the key value store, or {@code null} if no {@link TimestampedKeyValueStore} has been
-   * registered with the given name
-   * @see #getAllStateStores()
-   * @see #getStateStore(String)
-   * @see #getKeyValueStore(String)
-   * @see #getWindowStore(String)
-   * @see #getTimestampedWindowStore(String)
-   * @see #getSessionStore(String)
-   */
-//  @SuppressWarnings("unchecked")
-//  public <K, V> KeyValueStore<K, ValueAndTimestamp<V>> getTimestampedKeyValueStore(
-//      final String name) {
-//    final StateStore store = getStateStore(name, false);
-//    return store instanceof TimestampedKeyValueStore ? (TimestampedKeyValueStore<K, V>) store
-//        : null;
-//  }
-
-//  /**
-//   * Get the {@link WindowStore} or {@link TimestampedWindowStore} with the given name. The store
-//   * can be a "regular" or global store.
-//   * <p>
-//   * If the registered store is a {@link TimestampedWindowStore} this method will return a
-//   * value-only query interface. <strong>It is highly recommended to update the code for this case
-//   * to avoid bugs and to use {@link #getTimestampedWindowStore(String)} for full store access
-//   * instead.</strong>
-//   * <p>
-//   * This is often useful in test cases to pre-populate the store before the test case instructs the
-//   * topology to process an input message, and/or to check the
-//   * store afterward.
-//   *
-//   * @param name the name of the store
-//   * @return the key value store, or {@code null} if no {@link WindowStore} or {@link
-//   * TimestampedWindowStore} has been registered with the given name
-//   * @see #getAllStateStores()
-//   * @see #getStateStore(String)
-//   * @see #getKeyValueStore(String)
-//   * @see #getTimestampedKeyValueStore(String)
-//   * @see #getTimestampedWindowStore(String)
-//   * @see #getSessionStore(String)
-//   */
-//  @SuppressWarnings("unchecked")
-//  public <K, V> WindowStore<K, V> getWindowStore(final String name) {
-//    final StateStore store = getStateStore(name, false);
-//    if (store instanceof TimestampedWindowStore) {
-//      log.info(
-//          "Method #getTimestampedWindowStore() should be used to access a TimestampedWindowStore.");
-//      return new WindowStoreFacade<>((TimestampedWindowStore<K, V>) store);
-//    }
-//    return store instanceof WindowStore ? (WindowStore<K, V>) store : null;
-//  }
-//
-//  /**
-//   * Get the {@link TimestampedWindowStore} with the given name. The store can be a "regular" or
-//   * global store.
-//   * <p>
-//   * This is often useful in test cases to pre-populate the store before the test case instructs the
-//   * topology to {@link #pipeInput(ConsumerRecord) process an input message}, and/or to check the
-//   * store afterward.
-//   *
-//   * @param name the name of the store
-//   * @return the key value store, or {@code null} if no {@link TimestampedWindowStore} has been
-//   * registered with the given name
-//   * @see #getAllStateStores()
-//   * @see #getStateStore(String)
-//   * @see #getKeyValueStore(String)
-//   * @see #getTimestampedKeyValueStore(String)
-//   * @see #getWindowStore(String)
-//   * @see #getSessionStore(String)
-//   */
-//  @SuppressWarnings("unchecked")
-//  public <K, V> WindowStore<K, ValueAndTimestamp<V>> getTimestampedWindowStore(final String name) {
-//    final StateStore store = getStateStore(name, false);
-//    return store instanceof TimestampedWindowStore ? (TimestampedWindowStore<K, V>) store : null;
-//  }
-//
-//  /**
-//   * Get the {@link SessionStore} with the given name. The store can be a "regular" or global
-//   * store.
-//   * <p>
-//   * This is often useful in test cases to pre-populate the store before the test case instructs the
-//   * topology to {@link #pipeInput(ConsumerRecord) process an input message}, and/or to check the
-//   * store afterward.
-//   *
-//   * @param name the name of the store
-//   * @return the key value store, or {@code null} if no {@link SessionStore} has been registered
-//   * with the given name
-//   * @see #getAllStateStores()
-//   * @see #getStateStore(String)
-//   * @see #getKeyValueStore(String)
-//   * @see #getTimestampedKeyValueStore(String)
-//   * @see #getWindowStore(String)
-//   * @see #getTimestampedWindowStore(String)
-//   */
-//  @SuppressWarnings("unchecked")
-//  public <K, V> SessionStore<K, V> getSessionStore(final String name) {
-//    final StateStore store = getStateStore(name, false);
-//    return store instanceof SessionStore ? (SessionStore<K, V>) store : null;
-//  }
+// 2020-12-28 Update: remove methods getTimestampedKeyValueStore,
+//  getWindowStore, getTimestampedWindowStore, getSessionStore
 
   /**
    * Close the driver, its topology, and all processors.
    */
   public void close() {
+  // 2020-12-28 Update: close each stream task
     for (StreamTask task : tasks) {
       if (task != null) {
         task.close(true, false);
@@ -1198,6 +1001,8 @@ public class PartitionedTopologyTestDriver implements Closeable {
       // consumer.subscribe(new TopicPartition(topicName, 0));
       // Set up the partition that matches the ID (which is what ProcessorStateManager expects) ...
       final List<PartitionInfo> partitionInfos = new ArrayList<>();
+
+      // 2020-12-28 Update:  update consumer with all partitions
       for (int partId = 0; partId < partitionCount; partId++) {
         partitionInfos.add(new PartitionInfo(topicName, partId, null, null, null));
         consumer.updatePartitions(topicName, partitionInfos);
