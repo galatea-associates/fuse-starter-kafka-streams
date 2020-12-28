@@ -33,6 +33,10 @@ public class MockCluster {
     this.numPartitions = numPartitions;
   }
 
+  public static MockCluster empty() {
+    return new MockCluster(1);
+  }
+
   public MockCluster createTopic(String name) {
     if (partitionsByTopic.containsKey(name)) {
       return this;
@@ -69,13 +73,16 @@ public class MockCluster {
   }
 
   public List<PartitionInfo> availablePartitionsForTopic(String topic) {
-    if (!partitionsByTopic.containsKey(topic)) {
-      createTopic(topic);
-    }
+    createTopic(topic);
     return new ArrayList<>(partitionsByTopic.getOrDefault(topic, Collections.emptyList()));
   }
 
   private TopicPartition convertPartitionInfo(PartitionInfo p) {
     return new TopicPartition(p.topic(), p.partition());
+  }
+
+  public List<PartitionInfo> partitionsForTopic(String topic) {
+
+    return availablePartitionsForTopic(topic);
   }
 }

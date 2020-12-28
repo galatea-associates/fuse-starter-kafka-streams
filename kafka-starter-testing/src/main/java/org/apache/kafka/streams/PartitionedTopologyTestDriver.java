@@ -45,7 +45,7 @@ import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.clients.consumer.OffsetResetStrategy;
-import org.apache.kafka.clients.producer.MockProducer;
+import org.apache.kafka.clients.producer.NewMockProducer;
 import org.apache.kafka.clients.producer.Partitioner;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -212,7 +212,7 @@ public class PartitionedTopologyTestDriver implements Closeable {
   final ProcessorTopology processorTopology;
   final ProcessorTopology globalTopology;
 
-  private final MockProducer<byte[], byte[]> producer;
+  private final NewMockProducer<byte[], byte[]> producer;
 
   private final Set<String> internalTopics = new HashSet<>();
   private final Map<String, List<TopicPartition>> partitionsByInputTopic = new HashMap<>();
@@ -290,7 +290,7 @@ public class PartitionedTopologyTestDriver implements Closeable {
     stateDirectory = new StateDirectory(streamsConfig, mockWallClockTime, createStateDirectory);
 
     final Serializer<byte[]> bytesSerializer = new ByteArraySerializer();
-    producer = new MockProducer<>(cluster.getImmutable(), true, partitioner, bytesSerializer,
+    producer = new NewMockProducer<>(cluster, true, partitioner, bytesSerializer,
         bytesSerializer);
 
     final MetricConfig metricConfig = new MetricConfig()
@@ -546,13 +546,14 @@ public class PartitionedTopologyTestDriver implements Closeable {
 
       for (StreamTask task : tasks) {
         if (task.hasRecordsQueued()) {
-          captureOutputsAndReEnqueueInternalResults();
 
           task.process();
           task.maybePunctuateStreamTime();
           task.commit();
 
           recordsToProcess = true;
+
+          captureOutputsAndReEnqueueInternalResults();
         }
       }
 
@@ -619,12 +620,10 @@ public class PartitionedTopologyTestDriver implements Closeable {
       // Forward back into the topology if the produced record is to an internal or a source topic ...
       final String outputTopicName = record.topic();
 
-      int partition = determinePartition(record);
-
       final TopicPartition inputTopicOrPatternPartition = getInputTopicOrPatternPartition(
-          outputTopicName, partition);
+          outputTopicName, record.partition());
       final TopicPartition globalInputTopicPartition = getGlobalTopicOrPatternPartition(
-          outputTopicName, partition);
+          outputTopicName, record.partition());
 
       if (inputTopicOrPatternPartition != null) {
         enqueueTaskRecord(
@@ -648,7 +647,7 @@ public class PartitionedTopologyTestDriver implements Closeable {
   }
 
   /**
-   * {@link MockProducer#history()} doesn't record the assigned partition for "produced" records, so
+   * {@link NewMockProducer#history()} doesn't record the assigned partition for "produced" records, so
    * need to use the provided {@link Partitioner} directly here
    */
   private int determinePartition(ProducerRecord<byte[], byte[]> record) {
@@ -828,6 +827,7 @@ public class PartitionedTopologyTestDriver implements Closeable {
       throw new IllegalStateException(
           "Provided `TestRecord` does not have a timestamp and no timestamp overwrite was provided via `time` parameter.");
     }
+    cluster.createTopic(topic);
     int partition = partitioner
         .partition(topic, record.key(), serializedKey, record.value(), serializedValue,
             cluster.getImmutable());

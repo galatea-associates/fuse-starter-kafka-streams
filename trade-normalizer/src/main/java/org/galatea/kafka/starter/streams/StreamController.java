@@ -2,12 +2,16 @@ package org.galatea.kafka.starter.streams;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.Topology;
 import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.GlobalKTable;
 import org.apache.kafka.streams.kstream.KStream;
+import org.apache.kafka.streams.kstream.KeyValueMapper;
 import org.apache.kafka.streams.kstream.Produced;
+import org.apache.kafka.streams.kstream.ValueTransformerWithKey;
+import org.apache.kafka.streams.processor.ProcessorContext;
 import org.galatea.kafka.starter.messaging.BaseStreamingService;
 import org.galatea.kafka.starter.messaging.Topic;
 import org.galatea.kafka.starter.messaging.security.SecurityIsinMsgKey;
@@ -36,7 +40,16 @@ public class StreamController extends BaseStreamingService {
 
     KStream<InputTradeMsgKey, InputTradeMsgValue> tradeStream = builder
         .stream(inputTradeTopic.getName(), consumedWith(inputTradeTopic))
-        .peek(this::logConsume);
+        .transformValues(this::peekTransformer)
+        .map(
+            (KeyValueMapper<InputTradeMsgKey, InputTradeMsgValue, KeyValue<InputTradeMsgKey, InputTradeMsgValue>>) (key, value) -> {
+              key.setTradeId(key.getTradeId() + "-1");
+              return KeyValue.pair(key, value);
+            })
+        .transformValues(this::peekTransformer)
+        .through("repartition-topic", producedWith(inputTradeTopic))
+        .transformValues(this::peekTransformer);
+//        .peek(this::logConsume);
 
     KStream<InputTradeMsgKey, TradeMsgValue> securityJoinedTradeStream = tradeStream
         .join(securityTable,
@@ -62,11 +75,39 @@ public class StreamController extends BaseStreamingService {
     return topology;
   }
 
+  private ValueTransformerWithKey<InputTradeMsgKey, InputTradeMsgValue, InputTradeMsgValue> peekTransformer() {
+    return new ValueTransformerWithKey<InputTradeMsgKey, InputTradeMsgValue, InputTradeMsgValue>() {
+      private ProcessorContext context;
+
+      @Override
+      public void init(ProcessorContext context) {
+        this.context = context;
+      }
+
+      @Override
+      public InputTradeMsgValue transform(InputTradeMsgKey key,
+          InputTradeMsgValue value) {
+        log.info("{} Consumed [{}|{}]: {} | {} ", context.taskId(),
+            classNameDisplay(key), classNameDisplay(value), key, value);
+        return value;
+      }
+
+      @Override
+      public void close() {
+
+      }
+    };
+  }
+
   private <K, V> Consumed<K, V> consumedWith(Topic<K, V> topic) {
     return Consumed.with(topic.getKeySerde(), topic.getValueSerde());
   }
 
   private <K, V> Produced<K, V> producedWith(Topic<K, V> topic) {
     return Produced.with(topic.getKeySerde(), topic.getValueSerde());
+  }
+
+  private String classNameDisplay(Object obj) {
+    return obj == null ? "null" : obj.getClass().getSimpleName();
   }
 }
