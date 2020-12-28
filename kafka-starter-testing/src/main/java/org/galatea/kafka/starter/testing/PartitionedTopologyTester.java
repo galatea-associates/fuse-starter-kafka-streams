@@ -29,7 +29,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
-import org.apache.kafka.streams.MockClusterBuilder;
+import org.apache.kafka.streams.MockCluster;
 import org.apache.kafka.streams.PartitionedTestInputTopic;
 import org.apache.kafka.streams.PartitionedTestOutputTopic;
 import org.apache.kafka.streams.PartitionedTopologyTestDriver;
@@ -79,13 +79,9 @@ public class PartitionedTopologyTester implements Closeable {
   }
 
   //TODO: handle auto-created topics, like repartition topics?
-  public PartitionedTopologyTester(Topology topology, Properties streamProperties,
-      Collection<String> topicNames) {
-    MockClusterBuilder clusterBuilder = new MockClusterBuilder()
-        .withDefaultPartitions(NUM_PARTITIONS);
-
-    // add all topics to the clusterBuilder with NUM_PARTITIONS
-    topicNames.forEach(clusterBuilder::withTopic);
+  //TODO: PartitionedTopologyTester use MockCluster for most things, creating a Cluster object when necessary
+  //TODO: AdminClient integrates with MockCluster so auto topics can be created
+  public PartitionedTopologyTester(Topology topology, Properties streamProperties, MockCluster cluster) {
 
     String stateDir =
         streamProperties.getProperty(StreamsConfig.STATE_DIR_CONFIG) + "/" + streamProperties
@@ -95,7 +91,7 @@ public class PartitionedTopologyTester implements Closeable {
       log.error("Was unable to delete state dir before tests: {}", stateDir);
     }
 
-    driver = new PartitionedTopologyTestDriver(topology, streamProperties, clusterBuilder.build());
+    driver = new PartitionedTopologyTestDriver(topology, streamProperties, cluster);
     log.info("Initiated new TopologyTester with application ID: {}",
         streamProperties.getProperty(StreamsConfig.APPLICATION_ID_CONFIG));
   }
@@ -237,7 +233,8 @@ public class PartitionedTopologyTester implements Closeable {
     log.info("{} Piping record into topology on topic {}: {}",
         PartitionedTopologyTester.class.getSimpleName(),
         topic.getName(), record);
-    PartitionedTestInputTopic<K, V> testInputTopic = (PartitionedTestInputTopic<K, V>) inputTopics.get(topic.getName());
+    PartitionedTestInputTopic<K, V> testInputTopic = (PartitionedTestInputTopic<K, V>) inputTopics
+        .get(topic.getName());
     testInputTopic.pipeInput(record.key, record.value);
   }
 
@@ -449,14 +446,10 @@ public class PartitionedTopologyTester implements Closeable {
       Class<?> forClass = entry.getKey();
       RecordPostProcessor<?> processor = entry.getValue();
       if (processedKey == null && forClass.isInstance(record.key)) {
-        log.info("Post-processing key {}", record.key);
         processedKey = useProcessor((RecordPostProcessor<K>) processor, record.key);
-        log.info("Processed key: {}", processedKey);
       }
       if (processedValue == null && forClass.isInstance(record.value)) {
-        log.info("Post-processing key {}", record.value);
         processedValue = useProcessor((RecordPostProcessor<V>) processor, record.value);
-        log.info("Processed value: {}", processedValue);
       }
       if (processedKey != null && processedValue != null) {
         break;

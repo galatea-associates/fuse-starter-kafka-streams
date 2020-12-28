@@ -50,7 +50,6 @@ import org.apache.kafka.clients.producer.Partitioner;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.internals.DefaultPartitioner;
-import org.apache.kafka.common.Cluster;
 import org.apache.kafka.common.Metric;
 import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.PartitionInfo;
@@ -223,7 +222,7 @@ public class PartitionedTopologyTestDriver implements Closeable {
   private final Map<String, Queue<ProducerRecord<byte[], byte[]>>> outputRecordsByTopic = new HashMap<>();
   private final boolean eosEnabled;
   private final Partitioner partitioner;
-  private final Cluster cluster;
+  private final MockCluster cluster;
   private final int partitionCount;
   private final Map<String, Pair<Deserializer<?>, Deserializer<?>>> topicDeserializers = new HashMap<>();
 
@@ -235,7 +234,7 @@ public class PartitionedTopologyTestDriver implements Closeable {
    * @param config the configuration for the topology
    */
   public PartitionedTopologyTestDriver(final Topology topology,
-      final Properties config, Cluster cluster) {
+      final Properties config, MockCluster cluster) {
     this(topology, config, null, new DefaultPartitioner(), cluster);
   }
 
@@ -251,7 +250,7 @@ public class PartitionedTopologyTestDriver implements Closeable {
       @NonNull final Properties config,
       final Instant initialWallClockTime,
       final Partitioner partitioner,
-      @NonNull final Cluster cluster) {
+      @NonNull final MockCluster cluster) {
     this(
         topology.internalTopologyBuilder,
         config,
@@ -272,7 +271,7 @@ public class PartitionedTopologyTestDriver implements Closeable {
       final Properties config,
       final long initialWallClockTimeMs,
       Partitioner partitioner,
-      Cluster cluster) {
+      MockCluster cluster) {
     partitionCount = 9;
     this.cluster = cluster;
     this.partitioner = partitioner;
@@ -291,7 +290,7 @@ public class PartitionedTopologyTestDriver implements Closeable {
     stateDirectory = new StateDirectory(streamsConfig, mockWallClockTime, createStateDirectory);
 
     final Serializer<byte[]> bytesSerializer = new ByteArraySerializer();
-    producer = new MockProducer<>(cluster, true, partitioner, bytesSerializer,
+    producer = new MockProducer<>(cluster.getImmutable(), true, partitioner, bytesSerializer,
         bytesSerializer);
 
     final MetricConfig metricConfig = new MetricConfig()
@@ -658,9 +657,12 @@ public class PartitionedTopologyTestDriver implements Closeable {
     Object originalKey = deserializers.getKey().deserialize(record.topic(), record.key());
     Object originalValue = deserializers.getValue().deserialize(record.topic(), record.value());
 
+    // make sure the topic is registered in the cluster before getting an immutable representation
+    // of the cluster for the Partitioner
+    cluster.createTopic(record.topic());
     return partitioner
         .partition(record.topic(), originalKey, record.key(), originalValue, record.value(),
-            cluster);
+            cluster.getImmutable());
   }
 
   /**
@@ -827,7 +829,8 @@ public class PartitionedTopologyTestDriver implements Closeable {
           "Provided `TestRecord` does not have a timestamp and no timestamp overwrite was provided via `time` parameter.");
     }
     int partition = partitioner
-        .partition(topic, record.key(), serializedKey, record.value(), serializedValue, cluster);
+        .partition(topic, record.key(), serializedKey, record.value(), serializedValue,
+            cluster.getImmutable());
 
     pipeRecord(topic, timestamp, serializedKey, serializedValue, record.headers(), partition);
   }
