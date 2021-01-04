@@ -1,0 +1,31 @@
+Configuration:
+  name: Default
+
+  # Some properties so we're not tempted to hard-code anything below
+  Properties:
+    Property:
+      - name: log-pattern
+        value: "%d{yyyy.MM.dd HH:mm:ss.SSS} [%t%X{StreamTask}] %-5level [%X{X-B3-TraceId}/%X{X-B3-SpanId}] %logger{1.} - %X{internal-request-id}%X{external-request-id}%msg%xThrowable{separator(|)}%n"
+
+  # Create some appenders
+  Appenders:
+
+    # Log to console.
+    Console:
+      name: Console
+      target: SYSTEM_OUT
+      PatternLayout:
+        Pattern: "%d{yyyy.MM.dd HH:mm:ss.SSS} [%t%X{StreamTask}] %-5level %logger{1.} - %X{internal-request-id}%X{external-request-id}%msg%xThrowable{separator(|)}%n"
+
+  Loggers:
+    # Define some defaults
+    Root:
+      level: info
+      AppenderRef:
+        - ref: Console
+
+    Logger:
+      # Turn off Spring auto-configuration debug-level logging because it adds a lot of noise to startup logs
+      # If Spring debug logging is off this isn't necessary
+      - name: org.springframework.boot.autoconfigure.logging.AutoConfigurationReportLoggingInitializer
+        level: info
