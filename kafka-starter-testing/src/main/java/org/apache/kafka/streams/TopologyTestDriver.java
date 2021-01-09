@@ -101,9 +101,9 @@ import org.galatea.kafka.starter.util.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class PartitionedTopologyTestDriver implements Closeable {
+public class TopologyTestDriver implements Closeable {
 
-  private static final Logger log = LoggerFactory.getLogger(PartitionedTopologyTestDriver.class);
+  private static final Logger log = LoggerFactory.getLogger(TopologyTestDriver.class);
 
   private final Time mockWallClockTime;
   private final InternalTopologyBuilder internalTopologyBuilder;
@@ -138,7 +138,7 @@ public class PartitionedTopologyTestDriver implements Closeable {
    * @param topology the topology to be tested
    * @param config the configuration for the topology
    */
-  public PartitionedTopologyTestDriver(final Topology topology,
+  public TopologyTestDriver(final Topology topology,
       final Properties config, MockCluster cluster) {
     this(topology, config, null, new DefaultPartitioner(), cluster);
   }
@@ -151,7 +151,7 @@ public class PartitionedTopologyTestDriver implements Closeable {
    * @param initialWallClockTime the initial value of internally mocked wall-clock time
    */
   @Builder
-  public PartitionedTopologyTestDriver(@NonNull final Topology topology,
+  public TopologyTestDriver(@NonNull final Topology topology,
       @NonNull final Properties config,
       final Instant initialWallClockTime,
       final Partitioner partitioner,
@@ -172,7 +172,7 @@ public class PartitionedTopologyTestDriver implements Closeable {
    * @param config the configuration for the topology
    * @param initialWallClockTimeMs the initial value of internally mocked wall-clock time
    */
-  private PartitionedTopologyTestDriver(final InternalTopologyBuilder builder,
+  private TopologyTestDriver(final InternalTopologyBuilder builder,
       final Properties config,
       final long initialWallClockTimeMs,
       Partitioner partitioner,
@@ -615,7 +615,7 @@ public class PartitionedTopologyTestDriver implements Closeable {
    *
    * @param topic the name of the topic
    * @return the next record on that topic, or {@code null} if there is no record available
-   * @deprecated Since 2.4 use methods of {@link PartitionedTestOutputTopic} instead
+   * @deprecated Since 2.4 use methods of {@link TestOutputTopic} instead
    */
   @Deprecated
   public ProducerRecord<byte[], byte[]> readOutput(final String topic) {
@@ -634,7 +634,7 @@ public class PartitionedTopologyTestDriver implements Closeable {
    * @param keyDeserializer the deserializer for the key type
    * @param valueDeserializer the deserializer for the value type
    * @return the next record on that topic, or {@code null} if there is no record available
-   * @deprecated Since 2.4 use methods of {@link PartitionedTestOutputTopic} instead
+   * @deprecated Since 2.4 use methods of {@link TestOutputTopic} instead
    */
   @Deprecated
   public <K, V> ProducerRecord<K, V> readOutput(final String topic,
@@ -662,7 +662,7 @@ public class PartitionedTopologyTestDriver implements Closeable {
   }
 
   /**
-   * Create {@link PartitionedTestInputTopic} to be used for piping records to topic Uses current
+   * Create {@link TestInputTopic} to be used for piping records to topic Uses current
    * system time as start timestamp for records. Auto-advance is disabled.
    *
    * @param topicName the name of the topic
@@ -670,33 +670,33 @@ public class PartitionedTopologyTestDriver implements Closeable {
    * @param valueSerializer the Serializer for the value type
    * @param <K> the key type
    * @param <V> the value type
-   * @return {@link PartitionedTestInputTopic} object
+   * @return {@link TestInputTopic} object
    */
    // 2020-12-28 Update: use PartitionedTestInputTopic instead of TestInputTopic
    //  because of the new class PartitionedTopologyTestDriver
-  public final <K, V> PartitionedTestInputTopic<K, V> createInputTopic(final String topicName,
+  public final <K, V> TestInputTopic<K, V> createInputTopic(final String topicName,
       final Serializer<K> keySerializer,
       final Serializer<V> valueSerializer) {
-    return new PartitionedTestInputTopic<>(this, topicName, keySerializer,
+    return new TestInputTopic<>(this, topicName, keySerializer,
         valueSerializer, Instant.now(), Duration.ZERO);
   }
 
   /**
-   * Create {@link PartitionedTestOutputTopic} to be used for reading records from topic
+   * Create {@link TestOutputTopic} to be used for reading records from topic
    *
    * @param topicName the name of the topic
    * @param keyDeserializer the Deserializer for the key type
    * @param valueDeserializer the Deserializer for the value type
    * @param <K> the key type
    * @param <V> the value type
-   * @return {@link PartitionedTestOutputTopic} object
+   * @return {@link TestOutputTopic} object
    */
    // 2020-12-28 Update: use PartitionedTestOutputTopic instead of TestOutputTopic
    //  because of the new class PartitionedTopologyTestDriver
-  public final <K, V> PartitionedTestOutputTopic<K, V> createOutputTopic(final String topicName,
+  public final <K, V> TestOutputTopic<K, V> createOutputTopic(final String topicName,
       final Deserializer<K> keyDeserializer,
       final Deserializer<V> valueDeserializer) {
-    PartitionedTestOutputTopic<K, V> topic = new PartitionedTestOutputTopic<>(this, topicName,
+    TestOutputTopic<K, V> topic = new TestOutputTopic<>(this, topicName,
         keyDeserializer, valueDeserializer);
     topicDeserializers.put(topicName, Pair.of(keyDeserializer, valueDeserializer));
     return topic;

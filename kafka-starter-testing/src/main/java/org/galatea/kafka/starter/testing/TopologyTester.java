@@ -29,6 +29,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
+import org.apache.kafka.streams.MockCluster;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.TestInputTopic;
 import org.apache.kafka.streams.TestOutputTopic;
@@ -81,7 +82,7 @@ public class TopologyTester implements Closeable {
     if (dirFile.exists() && !FileSystemUtils.deleteRecursively(dirFile)) {
       log.error("Was unable to delete state dir before tests: {}", stateDir);
     }
-    driver = new TopologyTestDriver(topology, streamProperties);
+    driver = new TopologyTestDriver(topology, streamProperties, MockCluster.empty());
     log.info("Initiated new TopologyTester with application ID: {}",
         streamProperties.getProperty(StreamsConfig.APPLICATION_ID_CONFIG));
   }
