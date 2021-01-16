@@ -29,12 +29,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
+import org.apache.kafka.streams.MockCluster;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.TestInputTopic;
 import org.apache.kafka.streams.TestOutputTopic;
 import org.apache.kafka.streams.Topology;
 import org.apache.kafka.streams.TopologyTestDriver;
-import org.apache.kafka.streams.processor.StateStore;
 import org.apache.kafka.streams.state.KeyValueIterator;
 import org.apache.kafka.streams.state.KeyValueStore;
 import org.apache.kafka.streams.state.QueryableStoreType;
@@ -82,7 +82,7 @@ public class TopologyTester implements Closeable {
     if (dirFile.exists() && !FileSystemUtils.deleteRecursively(dirFile)) {
       log.error("Was unable to delete state dir before tests: {}", stateDir);
     }
-    driver = new TopologyTestDriver(topology, streamProperties);
+    driver = new TopologyTestDriver(topology, streamProperties, MockCluster.empty());
     log.info("Initiated new TopologyTester with application ID: {}",
         streamProperties.getProperty(StreamsConfig.APPLICATION_ID_CONFIG));
   }
@@ -98,21 +98,20 @@ public class TopologyTester implements Closeable {
   public void beforeTest() {
     outputTopicConfig.forEach((topicName, topicConfig) -> readOutput(topicConfig));
 
-    for (Entry<String, StateStore> e : driver.getAllStateStores().entrySet()) {
-      String storeName = e.getKey();
-      KeyValueStore<Object, ?> kvStore = (KeyValueStore<Object, ?>) e.getValue();
-      try (KeyValueIterator<Object, ?> iter = kvStore.all()) {
-        while (iter.hasNext()) {
-          KeyValue<Object, ?> entry = iter.next();
-          log.info("Deleting entry in {}: {}", storeName, entry);
-          kvStore.delete(entry.key);
-        }
+    driver.getAllStateStores().values().stream().flatMap(Collection::stream)
+        .map(s -> (KeyValueStore<Object, ?>) s)
+        .forEach(kvStore -> {
+          try (KeyValueIterator<Object, ?> iter = kvStore.all()) {
+            while (iter.hasNext()) {
+              KeyValue<Object, ?> entry = iter.next();
+              log.info("Deleting entry in store: {}", entry);
+              kvStore.delete(entry.key);
+            }
 
-        // TODO: clear store caches that are created by kafka streams internal stores
+            kvStore.flush();
+          }
+        });
 
-        kvStore.flush();
-      }
-    }
   }
 
   public <K, V> void purgeMessagesInOutput(Topic<K, V> topic) {

@@ -34,20 +34,6 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
 
-  <build>
-    <plugins>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.1</version>
-        <configuration>
-          <source>1.8</source>
-          <target>1.8</target>
-        </configuration>
-      </plugin>
-    </plugins>
-  </build>
-
   <dependencies>
     <!-- Apache Kafka dependencies -->
     <dependency>
@@ -124,6 +110,59 @@
     </dependency>
 
   </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.1</version>
+        <configuration>
+          <source>1.8</source>
+          <target>1.8</target>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.2.4</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <artifactSet>
+                <includes>
+                  <include>org.apache.kafka:kafka-streams-test-utils</include>
+                  <include>org.apache.kafka:kafka-clients</include>
+                </includes>
+              </artifactSet>
+              <filters>
+                <filter>
+                  <artifact>org.apache.kafka:kafka-streams-test-utils</artifact>
+                  <excludes>
+                    <!-- These classes will be overridden by the ones inside the JAR -->
+                    <exclude>org/apache/kafka/streams/TopologyTestDriver.class</exclude>
+                  </excludes>
+                </filter>
+                <filter>
+                  <artifact>org.apache.kafka:kafka-clients</artifact>
+                  <excludes>
+                    <!-- MockProducer needs to support tracking partitions of "produced" records -->
+<!--                    <exclude>org/apache/kafka/clients/producer/MockProducer.class</exclude>-->
+                  </excludes>
+                </filter>
+              </filters>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+    </plugins>
+  </build>
 
   <repositories>
     <repository>
