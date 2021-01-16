@@ -11,6 +11,8 @@
     <module>core-messaging</module>
     <module>core</module>
     <module>core-kafka-streams</module>
+    <module>topology-admin</module>
+    <module>spring-boot-starter-topology-admin-client</module>
   </modules>
 
   <parent>
