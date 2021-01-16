@@ -137,6 +137,7 @@
               <artifactSet>
                 <includes>
                   <include>org.apache.kafka:kafka-streams-test-utils</include>
+                  <include>org.apache.kafka:kafka-clients</include>
                 </includes>
               </artifactSet>
               <filters>
@@ -145,6 +146,13 @@
                   <excludes>
                     <!-- These classes will be overridden by the ones inside the JAR -->
                     <exclude>org/apache/kafka/streams/TopologyTestDriver.class</exclude>
+                  </excludes>
+                </filter>
+                <filter>
+                  <artifact>org.apache.kafka:kafka-clients</artifact>
+                  <excludes>
+                    <!-- MockProducer needs to support tracking partitions of "produced" records -->
+<!--                    <exclude>org/apache/kafka/clients/producer/MockProducer.class</exclude>-->
                   </excludes>
                 </filter>
               </filters>

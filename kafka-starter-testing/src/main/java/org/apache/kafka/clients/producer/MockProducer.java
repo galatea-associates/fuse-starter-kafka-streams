@@ -13,6 +13,9 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ * Modified by Grant Wade on 2021-01-15 to record in history ProducerRecords with partition assigned,
+ * instead of recording the original ProducerRecord.
  */
 package org.apache.kafka.clients.producer;
 
@@ -47,7 +50,7 @@ import org.apache.kafka.streams.MockCluster;
  * configured to allow the user to control the completion of the call and supply an optional error
  * for the producer to throw.
  */
-public class NewMockProducer<K, V> implements Producer<K, V> {
+public class MockProducer<K, V> implements Producer<K, V> {
 
   private final MockCluster cluster;
   private final Partitioner partitioner;
@@ -84,7 +87,7 @@ public class NewMockProducer<K, V> implements Producer<K, V> {
    * @param keySerializer The serializer for key that implements {@link Serializer}.
    * @param valueSerializer The serializer for value that implements {@link Serializer}.
    */
-  public NewMockProducer(final MockCluster cluster,
+  public MockProducer(final MockCluster cluster,
       final boolean autoComplete,
       final Partitioner partitioner,
       final Serializer<K> keySerializer,
@@ -107,11 +110,11 @@ public class NewMockProducer<K, V> implements Producer<K, V> {
    * Create a new mock producer with invented metadata the given autoComplete setting and key\value
    * serializers.
    *
-   * Equivalent to {@link #NewMockProducer(MockCluster, boolean, Partitioner, Serializer,
-   * Serializer)} new MockProducer(MockCluster.empty(), autoComplete, new DefaultPartitioner(),
-   * keySerializer, valueSerializer)}
+   * Equivalent to {@link #MockProducer(MockCluster, boolean, Partitioner, Serializer, Serializer)}
+   * new MockProducer(MockCluster.empty(), autoComplete, new DefaultPartitioner(), keySerializer,
+   * valueSerializer)}
    */
-  public NewMockProducer(final boolean autoComplete,
+  public MockProducer(final boolean autoComplete,
       final Serializer<K> keySerializer,
       final Serializer<V> valueSerializer) {
     this(MockCluster.empty(), autoComplete, new DefaultPartitioner(), keySerializer,
@@ -122,11 +125,11 @@ public class NewMockProducer<K, V> implements Producer<K, V> {
    * Create a new mock producer with invented metadata the given autoComplete setting, partitioner
    * and key\value serializers.
    *
-   * Equivalent to {@link #NewMockProducer(MockCluster, boolean, Partitioner, Serializer,
-   * Serializer)} new MockProducer(MockCluster.empty(), autoComplete, partitioner, keySerializer,
+   * Equivalent to {@link #MockProducer(MockCluster, boolean, Partitioner, Serializer, Serializer)}
+   * new MockProducer(MockCluster.empty(), autoComplete, partitioner, keySerializer,
    * valueSerializer)}
    */
-  public NewMockProducer(final boolean autoComplete,
+  public MockProducer(final boolean autoComplete,
       final Partitioner partitioner,
       final Serializer<K> keySerializer,
       final Serializer<V> valueSerializer) {
@@ -136,10 +139,10 @@ public class NewMockProducer<K, V> implements Producer<K, V> {
   /**
    * Create a new mock producer with invented metadata.
    *
-   * Equivalent to {@link #NewMockProducer(MockCluster, boolean, Partitioner, Serializer,
-   * Serializer)} new MockProducer(MockCluster.empty(), false, null, null, null)}
+   * Equivalent to {@link #MockProducer(MockCluster, boolean, Partitioner, Serializer, Serializer)}
+   * new MockProducer(MockCluster.empty(), false, null, null, null)}
    */
-  public NewMockProducer() {
+  public MockProducer() {
     this(MockCluster.empty(), false, null, null, null);
   }
 

@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import lombok.Getter;
 import org.apache.kafka.common.Cluster;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.PartitionInfo;
@@ -16,6 +17,7 @@ import org.apache.kafka.common.TopicPartition;
 
 public class MockCluster {
 
+  @Getter
   private final int numPartitions;
   private final String clusterId;
   private final Collection<Node> nodes = new HashSet<>();

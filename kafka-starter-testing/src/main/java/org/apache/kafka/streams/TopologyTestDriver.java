@@ -13,6 +13,19 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ * Modified by Grant Wade on 2021-01-15:
+ *  - Add constructor argument for MockCluster
+ *  - Multiple tasks allowed, number determined by MockCluster#numPartitions
+ *  - Records assigned to tasks according to provided Partitioner or DefaultPartitioner if one is not provided
+ *  - Removed methods that are not applicable with multiple tasks:
+ *    - getStateStore(String)
+ *    - getTimestampedKeyValueStore(String)
+ *    - getWindowStore(String)
+ *    - getTimestampedWindowStore(String)
+ *    - getSessionStore(String)
+ *  - Removed deprecated pipeInput(ConsumerRecord)
+ *  - getKeyValueStore(String) returns facade store that aggregates underlying task stores (read-only)
  */
 package org.apache.kafka.streams;
 
@@ -44,7 +57,7 @@ import lombok.NonNull;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.clients.consumer.OffsetResetStrategy;
-import org.apache.kafka.clients.producer.NewMockProducer;
+import org.apache.kafka.clients.producer.MockProducer;
 import org.apache.kafka.clients.producer.Partitioner;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.internals.DefaultPartitioner;
@@ -117,7 +130,7 @@ public class TopologyTestDriver implements Closeable {
   final ProcessorTopology processorTopology;
   final ProcessorTopology globalTopology;
 
-  private final NewMockProducer<byte[], byte[]> producer;
+  private final MockProducer<byte[], byte[]> producer;
 
   private final Set<String> internalTopics = new HashSet<>();
   private final Map<String, List<TopicPartition>> partitionsByInputTopic = new HashMap<>();
@@ -177,7 +190,7 @@ public class TopologyTestDriver implements Closeable {
       final long initialWallClockTimeMs,
       Partitioner partitioner,
       MockCluster cluster) {
-    partitionCount = 9;
+    partitionCount = cluster.getNumPartitions();
     this.cluster = cluster;
     this.partitioner = partitioner;
     final StreamsConfig streamsConfig = new QuietStreamsConfig(config);
@@ -195,7 +208,7 @@ public class TopologyTestDriver implements Closeable {
     stateDirectory = new StateDirectory(streamsConfig, mockWallClockTime, createStateDirectory);
 
     final Serializer<byte[]> bytesSerializer = new ByteArraySerializer();
-    producer = new NewMockProducer<>(cluster, true, partitioner, bytesSerializer,
+    producer = new MockProducer<>(cluster, true, partitioner, bytesSerializer,
         bytesSerializer);
 
     final MetricConfig metricConfig = new MetricConfig()
@@ -559,7 +572,7 @@ public class TopologyTestDriver implements Closeable {
 
 // TODO: remove
   /**
-   * {@link NewMockProducer#history()} doesn't record the assigned partition for "produced" records, so
+   * {@link MockProducer#history()} doesn't record the assigned partition for "produced" records, so
    * need to use the provided {@link Partitioner} directly here
    */
   private int determinePartition(ProducerRecord<byte[], byte[]> record) {
