@@ -1,0 +1,7 @@
+node.types:
+  colors:
+    REST: "blue"
+    TOPIC: "aqua"
+  read-type-arrow:
+    GLOBAL: '-[bold,#green,dashed]-'
+    STREAM: '-[bold,#green]-'
