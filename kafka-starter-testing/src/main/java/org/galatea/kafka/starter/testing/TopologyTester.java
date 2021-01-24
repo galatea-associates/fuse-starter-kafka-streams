@@ -22,8 +22,8 @@ import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
-import java.util.concurrent.Callable;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.serialization.Serde;
@@ -135,7 +135,7 @@ public class TopologyTester implements Closeable {
   }
 
   public <K, V> TopicConfig<K, V> configureInputTopic(Topic<K, V> topic,
-      Callable<K> createEmptyKey, Callable<V> createEmptyValue) {
+      Supplier<K> createEmptyKey, Supplier<V> createEmptyValue) {
 
     if (inputTopicConfig.containsKey(topic.getName())) {
       throw new IllegalStateException(
@@ -158,7 +158,7 @@ public class TopologyTester implements Closeable {
   }
 
   public <K, V> TopicConfig<K, V> configureOutputTopic(Topic<K, V> topic,
-      Callable<K> createEmptyKey, Callable<V> createEmptyValue) {
+      Supplier<K> createEmptyKey, Supplier<V> createEmptyValue) {
     if (outputTopicConfig.containsKey(topic.getName())) {
       throw new IllegalStateException(
           String.format("Output topic %s cannot be configured more than once", topic.getName()));
@@ -171,7 +171,7 @@ public class TopologyTester implements Closeable {
 
   public <K, V> TopicConfig<K, V> configureStore(String storeName, Serde<K> keySerde,
       Serde<V> valueSerde,
-      Callable<K> createEmptyKey, Callable<V> createEmptyValue) {
+      Supplier<K> createEmptyKey, Supplier<V> createEmptyValue) {
     if (storeConfig.containsKey(storeName)) {
       throw new IllegalStateException(
           String.format("Store %s cannot be configured more than once", storeName));
@@ -212,13 +212,13 @@ public class TopologyTester implements Closeable {
     topicConfig.getConfiguredInput().pipeInput(record.key, record.value);
   }
 
-  private <V, K> boolean keyIsBean(TopicConfig<K, V> topicConfig) throws Exception {
+  private <V, K> boolean keyIsBean(TopicConfig<K, V> topicConfig) {
     Class<?> keyClass = topicConfig.createKey().getClass();
     return beanClasses.contains(keyClass) || collectionContainsAny(beanClasses,
         Arrays.asList(keyClass.getInterfaces()));
   }
 
-  private <V, K> boolean valueIsBean(TopicConfig<K, V> topicConfig) throws Exception {
+  private <V, K> boolean valueIsBean(TopicConfig<K, V> topicConfig) {
     Class<?> valueClass = topicConfig.createValue().getClass();
     return beanClasses.contains(valueClass) || collectionContainsAny(beanClasses,
         Arrays.asList(valueClass.getInterfaces()));
@@ -271,8 +271,7 @@ public class TopologyTester implements Closeable {
   }
 
   protected <V, K> Collection<KeyValue<K, V>> expectedRecordsFromMaps(TopicConfig<K, V> topicConfig,
-      Collection<Map<String, String>> expectedRecordMaps, Set<String> extraFieldsToDefault)
-      throws Exception {
+      Collection<Map<String, String>> expectedRecordMaps, Set<String> extraFieldsToDefault) {
 
     List<KeyValue<K, V>> expectedOutput = new ArrayList<>();
     if (expectedRecordMaps.isEmpty()) {
@@ -389,7 +388,7 @@ public class TopologyTester implements Closeable {
 
   // TODO: raw types aliasing, conversions, defaults
   private <K, V> KeyValue<K, V> createRecordWithProcessing(Map<String, String> expectedEntryMap,
-      TopicConfig<K, V> topicConfig) throws Exception {
+      TopicConfig<K, V> topicConfig) {
     boolean keyIsBean = keyIsBean(topicConfig);
     boolean valueIsBean = valueIsBean(topicConfig);
 
@@ -399,7 +398,7 @@ public class TopologyTester implements Closeable {
     return postProcessRecord(record);
   }
 
-  private <V, K> KeyValue<K, V> postProcessRecord(KeyValue<K, V> record) throws Exception {
+  private <V, K> KeyValue<K, V> postProcessRecord(KeyValue<K, V> record) {
     K processedKey = null;
     V processedValue = null;
     for (Entry<Class<?>, RecordPostProcessor<?>> entry : postProcessors.entrySet()) {
@@ -425,14 +424,17 @@ public class TopologyTester implements Closeable {
     return KeyValue.pair(processedKey, processedValue);
   }
 
-  private <K> K useProcessor(RecordPostProcessor<K> processor, K key)
-      throws Exception {
+  private <K> K useProcessor(RecordPostProcessor<K> processor, K key) {
     return processor.process(key);
   }
 
   public <K, V> void assertOutputMap(Topic<K, V> topic,
       Collection<Map<String, String>> expectedRecords) throws Exception {
     assertOutputMap(topic, expectedRecords, Collections.emptySet());
+  }
+
+  public <K, V> OutputAssertionBuilder<K, V> newOutputAssertion(Topic<K, V> topic) {
+    return new OutputAssertionBuilder<>(topic, this);
   }
 
   public <K, V> void assertOutputMap(Topic<K, V> topic,
@@ -473,8 +475,8 @@ public class TopologyTester implements Closeable {
     assertListEquals(expectedOutput, comparableOutput, true);
   }
 
-  private <K, V> List<KeyValue<K, V>> stripUnnecessaryFields(List<KeyValue<K, V>> records,
-      Set<String> necessaryFields, TopicConfig<K, V> topicConfig) throws Exception {
+  <K, V> List<KeyValue<K, V>> stripUnnecessaryFields(List<KeyValue<K, V>> records,
+      Set<String> necessaryFields, TopicConfig<K, V> topicConfig) {
 
     // strippedRecords will contain the same records as input, but with only necessary fields populated
     List<KeyValue<K, V>> strippedRecords = new ArrayList<>();
@@ -485,7 +487,7 @@ public class TopologyTester implements Closeable {
   }
 
   private <K, V> KeyValue<K, V> stripUnnecessaryFields(KeyValue<K, V> record,
-      Set<String> necessaryFields, TopicConfig<K, V> topicConfig) throws Exception {
+      Set<String> necessaryFields, TopicConfig<K, V> topicConfig) {
     boolean keyIsBean = keyIsBean(topicConfig);
     boolean valueIsBean = valueIsBean(topicConfig);
 
@@ -524,7 +526,7 @@ public class TopologyTester implements Closeable {
     }
   }
 
-  private <K, V> List<KeyValue<K, V>> readOutput(TopicConfig<K, V> config) {
+  <K, V> List<KeyValue<K, V>> readOutput(TopicConfig<K, V> config) {
     return config.getConfiguredOutput().readKeyValuesToList();
   }
 
@@ -539,7 +541,7 @@ public class TopologyTester implements Closeable {
   }
 
   @SuppressWarnings("unchecked")
-  private <K, V> TopicConfig<K, V> outputTopicConfig(Topic<K, V> topic) {
+  <K, V> TopicConfig<K, V> outputTopicConfig(Topic<K, V> topic) {
     TopicConfig<?, ?> topicConfig = outputTopicConfig.get(topic.getName());
     if (topicConfig == null) {
       throw new IllegalStateException(

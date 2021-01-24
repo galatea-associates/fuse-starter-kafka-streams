@@ -2,8 +2,8 @@ package org.galatea.kafka.starter.testing;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.Callable;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import lombok.AccessLevel;
 import lombok.Getter;
 import org.apache.kafka.common.serialization.Serde;
@@ -16,16 +16,17 @@ public class TopicConfig<K, V> {
   private final String topicName;
   private final Serde<K> keySerde;
   private final Serde<V> valueSerde;
-  private final Callable<K> createEmptyKey;
-  private final Callable<V> createEmptyValue;
-  private final TestInputTopic<K,V> configuredInput;
-  private final TestOutputTopic<K,V> configuredOutput;
+  private final Supplier<K> createEmptyKey;
+  private final Supplier<V> createEmptyValue;
+  private final TestInputTopic<K, V> configuredInput;
+  private final TestOutputTopic<K, V> configuredOutput;
   private final Map<String, String> aliases = new HashMap<>();
   private final Map<String, Function<String, Object>> conversions = new HashMap<>();
   private final Map<String, String> defaultValues = new HashMap<>();
 
   TopicConfig(String topicName, Serde<K> keySerde, Serde<V> valueSerde,
-      Callable<K> createEmptyKey, Callable<V> createEmptyValue, TestInputTopic<K,V> configuredInput) {
+      Supplier<K> createEmptyKey, Supplier<V> createEmptyValue,
+      TestInputTopic<K, V> configuredInput) {
     this.topicName = topicName;
     this.keySerde = keySerde;
     this.valueSerde = valueSerde;
@@ -36,7 +37,7 @@ public class TopicConfig<K, V> {
   }
 
   TopicConfig(String topicName, Serde<K> keySerde, Serde<V> valueSerde,
-      Callable<K> createEmptyKey, Callable<V> createEmptyValue) {
+      Supplier<K> createEmptyKey, Supplier<V> createEmptyValue) {
     this.topicName = topicName;
     this.keySerde = keySerde;
     this.valueSerde = valueSerde;
@@ -47,7 +48,8 @@ public class TopicConfig<K, V> {
   }
 
   TopicConfig(String topicName, Serde<K> keySerde, Serde<V> valueSerde,
-      Callable<K> createEmptyKey, Callable<V> createEmptyValue, TestOutputTopic<K,V> configuredOutput) {
+      Supplier<K> createEmptyKey, Supplier<V> createEmptyValue,
+      TestOutputTopic<K, V> configuredOutput) {
     this.topicName = topicName;
     this.keySerde = keySerde;
     this.valueSerde = valueSerde;
@@ -72,11 +74,11 @@ public class TopicConfig<K, V> {
     return this;
   }
 
-  K createKey() throws Exception {
-    return createEmptyKey.call();
+  K createKey() {
+    return createEmptyKey.get();
   }
 
-  V createValue() throws Exception {
-    return createEmptyValue.call();
+  V createValue() {
+    return createEmptyValue.get();
   }
 }

@@ -9,8 +9,8 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.Callable;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.streams.KeyValue;
 import org.galatea.kafka.starter.testing.alias.AliasHelper;
@@ -44,7 +44,7 @@ public class RecordBeanHelper {
    */
   public static <K, V> KeyValue<K, V> createRecord(ConversionUtil conversionUtil,
       Map<String, String> fields, TopicConfig<K, V> topicConfig, boolean keyIsBean,
-      boolean valueIsBean) throws Exception {
+      boolean valueIsBean) {
 
     Set<String> fieldsUsed = new HashSet<>();
 
@@ -87,8 +87,7 @@ public class RecordBeanHelper {
   }
 
   private static <K> K createPrimitive(Map<String, String> fields, K emptyObj,
-      Set<String> fieldsUsed, String objKey)
-      throws IllegalAccessException, InvocationTargetException, InstantiationException {
+      Set<String> fieldsUsed, String objKey) {
     String objStringValue = fields.get(objKey);
     Class<?> objClass = emptyObj.getClass();
     Objects.requireNonNull(objStringValue, String.format("Unmet requirement for non-bean type "
@@ -98,7 +97,7 @@ public class RecordBeanHelper {
     try {
       key = (K) objClass.getConstructor(String.class).newInstance(objStringValue);
       fieldsUsed.add(objKey);
-    } catch (NoSuchMethodException e) {
+    } catch (NoSuchMethodException | InstantiationException | IllegalAccessException | InvocationTargetException e) {
       throw new IllegalStateException(String.format("Could not find String constructor for "
               + "type %s. Maybe this class needs to be registered as a Bean type",
           objClass.getSimpleName()));
@@ -118,7 +117,7 @@ public class RecordBeanHelper {
    */
   public static <K, V> KeyValue<K, V> copyRecordPropertiesIntoNew(Set<String> fieldsToCopy,
       KeyValue<K, V> originalRecord, TopicConfig<K, V> topicConfig, boolean keyIsBean,
-      boolean valueIsBean) throws Exception {
+      boolean valueIsBean) {
 
     fieldsToCopy = AliasHelper.expandAliasKeys(fieldsToCopy, topicConfig.getAliases());
     HashSet<String> uncopiedFields = new HashSet<>(fieldsToCopy);
@@ -172,12 +171,11 @@ public class RecordBeanHelper {
     return new KeyValue<>(newKey, newValue);
   }
 
-  private static <K> K createPrimitive(K original)
-      throws IllegalAccessException, InvocationTargetException, InstantiationException {
+  private static <K> K createPrimitive(K original) {
     K key;
     try {
       key = (K) original.getClass().getConstructor(String.class).newInstance(original.toString());
-    } catch (NoSuchMethodException e) {
+    } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException | InstantiationException e) {
       throw new IllegalStateException(String.format("Could not find String constructor for "
               + "type %s. Maybe this class needs to be registered as a Bean type",
           original.getClass().getSimpleName()));
@@ -231,7 +229,7 @@ public class RecordBeanHelper {
    * @throws Exception upon {@link TopicConfig#createKey()} exception
    */
   private static <K, V> K createKey(ConversionUtil conversionUtil, Map<String, String> fields,
-      TopicConfig<K, V> topicConfig, Set<String> fieldsUsed) throws Exception {
+      TopicConfig<K, V> topicConfig, Set<String> fieldsUsed) {
 
     Map<String, Function<String, Object>> conversions = topicConfig.getConversions();
     Map<String, String> aliases = topicConfig.getAliases();
@@ -260,7 +258,7 @@ public class RecordBeanHelper {
    * @throws Exception upon {@link TopicConfig#createValue()} exception
    */
   private static <K, V> V createValue(ConversionUtil conversionUtil, Map<String, String> fields,
-      TopicConfig<K, V> topicConfig, Set<String> fieldsUsed) throws Exception {
+      TopicConfig<K, V> topicConfig, Set<String> fieldsUsed) {
 
     Map<String, Function<String, Object>> conversions = topicConfig.getConversions();
     Map<String, String> aliases = topicConfig.getAliases();
@@ -309,16 +307,15 @@ public class RecordBeanHelper {
    * @return modified bean.
    */
   private static <T> T createBeanWithValues(ConversionUtil conversionUtil,
-      Callable<T> createBeanMethod, Map<String, String> fields,
+      Supplier<T> createBeanMethod, Map<String, String> fields,
       Map<String, Function<String, Object>> conversions, Map<String, String> aliases,
       Map<String, String> defaultValues, Set<String> fieldsUsed, String maybeIncludePrefix,
-      String alwaysExcludePrefix)
-      throws Exception {
+      String alwaysExcludePrefix) {
 
     conversions = AliasHelper.expandAliasKeys(conversions, aliases);
     defaultValues = AliasHelper.expandAliasKeys(defaultValues, aliases);
     fields = AliasHelper.expandAliasKeys(fields, aliases);
-    BeanWrapper wrappedObj = wrapBean(createBeanMethod.call());
+    BeanWrapper wrappedObj = wrapBean(createBeanMethod.get());
 
     setFieldsInBean(wrappedObj, defaultValues, conversionUtil, conversions, alwaysExcludePrefix,
         maybeIncludePrefix);
