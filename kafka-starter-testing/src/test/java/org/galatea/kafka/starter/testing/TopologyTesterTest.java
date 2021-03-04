@@ -13,7 +13,6 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.SneakyThrows;
 import org.apache.avro.specific.SpecificRecord;
@@ -29,7 +28,7 @@ import org.galatea.kafka.starter.messaging.test.TestMsgKey;
 import org.galatea.kafka.starter.messaging.test.TestMsgValue;
 import org.galatea.kafka.starter.messaging.test.TestSubMsg;
 import org.galatea.kafka.starter.testing.avro.AvroPostProcessor;
-import org.galatea.kafka.starter.testing.conversion.ConversionUtil;
+import org.galatea.kafka.starter.testing.conversion.ConversionService;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -95,17 +94,11 @@ public class TopologyTesterTest {
     tester.registerBeanClass(TestMsgValue.class);
 
     Pattern relativeTDatePattern = Pattern.compile("^\\s*[Tt]\\s*(([+-])\\s*(\\d+)\\s*)?$");
-    ConversionUtil typeConversionUtil = tester.getTypeConversionUtil();
-    typeConversionUtil.registerTypeConversion(LocalDate.class, Pattern.compile("^\\d+$"),
-        stringValue -> LocalDate.ofEpochDay(Long.parseLong(stringValue)));
-    typeConversionUtil.registerTypeConversion(LocalDate.class, relativeTDatePattern,
-        tDateString -> {
-          Matcher matcher = relativeTDatePattern.matcher(tDateString);
-          if (!matcher.find()) {
-            throw new IllegalStateException(
-                "Registered pattern does not match used pattern for type conversion");
-          }
-
+    ConversionService typeConversionService = tester.getTypeConversionService();
+    typeConversionService.registerTypeConversion(LocalDate.class, Pattern.compile("^\\d+$"),
+        (stringValue, matcher) -> LocalDate.ofEpochDay(Long.parseLong(stringValue)));
+    typeConversionService.registerTypeConversion(LocalDate.class, relativeTDatePattern,
+        (tDateString, matcher) -> {
           if (matcher.group(1) != null) {
             String plusMinus = matcher.group(2);
             long numDays = Long.parseLong(matcher.group(3));
@@ -337,7 +330,8 @@ public class TopologyTesterTest {
   @SneakyThrows
   public void assertOutputAndStoreContainWithDefaultField() {
     TopologyTester tester = newTester();
-    tester.getOutputConfig(outputTopic2).getDefaultValues().put("nullableStringField", "defaultVal");
+    tester.getOutputConfig(outputTopic2).getDefaultValues()
+        .put("nullableStringField", "defaultVal");
     tester.getStoreConfig(storeName2).getDefaultValues().put("nullableStringField", "defaultVal");
 
     Set<String> extraFieldsToVerify = new HashSet<>();
@@ -351,15 +345,18 @@ public class TopologyTesterTest {
 
     tester.pipeInput(inputTopic2, inputRecord);
 
-    tester.assertOutputList(outputTopic2, Collections.singletonList(outputRecord), false, extraFieldsToVerify);
-    tester.assertStoreContain(storeName2, Collections.singletonList(outputRecord), extraFieldsToVerify);
+    tester.assertOutputList(outputTopic2, Collections.singletonList(outputRecord), false,
+        extraFieldsToVerify);
+    tester.assertStoreContain(storeName2, Collections.singletonList(outputRecord),
+        extraFieldsToVerify);
   }
 
   @Test(expected = AssertionError.class)
   @SneakyThrows
   public void assertOutputListFailDefaultField() {
     TopologyTester tester = newTester();
-    tester.getOutputConfig(outputTopic2).getDefaultValues().put("nullableStringField", "defaultVal");
+    tester.getOutputConfig(outputTopic2).getDefaultValues()
+        .put("nullableStringField", "defaultVal");
 
     Set<String> extraFieldsToVerify = new HashSet<>();
     extraFieldsToVerify.add("nullableStringField");
@@ -371,14 +368,16 @@ public class TopologyTesterTest {
 
     tester.pipeInput(inputTopic2, inputRecord);
 
-    tester.assertOutputList(outputTopic2, Collections.singletonList(outputRecord), false, extraFieldsToVerify);
+    tester.assertOutputList(outputTopic2, Collections.singletonList(outputRecord), false,
+        extraFieldsToVerify);
   }
 
   @Test(expected = AssertionError.class)
   @SneakyThrows
   public void assertOutputMapFailDefaultField() {
     TopologyTester tester = newTester();
-    tester.getOutputConfig(outputTopic2).getDefaultValues().put("nullableStringField", "defaultVal");
+    tester.getOutputConfig(outputTopic2).getDefaultValues()
+        .put("nullableStringField", "defaultVal");
 
     Set<String> extraFieldsToVerify = new HashSet<>();
     extraFieldsToVerify.add("nullableStringField");
@@ -390,14 +389,16 @@ public class TopologyTesterTest {
 
     tester.pipeInput(inputTopic2, inputRecord);
 
-    tester.assertOutputMap(outputTopic2, Collections.singletonList(outputRecord), extraFieldsToVerify);
+    tester.assertOutputMap(outputTopic2, Collections.singletonList(outputRecord),
+        extraFieldsToVerify);
   }
 
   @Test
   @SneakyThrows
   public void assertOutputMapDefaultField() {
     TopologyTester tester = newTester();
-    tester.getOutputConfig(outputTopic2).getDefaultValues().put("nullableStringField", "defaultVal");
+    tester.getOutputConfig(outputTopic2).getDefaultValues()
+        .put("nullableStringField", "defaultVal");
 
     Set<String> extraFieldsToVerify = new HashSet<>();
     extraFieldsToVerify.add("nullableStringField");
@@ -410,7 +411,8 @@ public class TopologyTesterTest {
 
     tester.pipeInput(inputTopic2, inputRecord);
 
-    tester.assertOutputMap(outputTopic2, Collections.singletonList(outputRecord), extraFieldsToVerify);
+    tester.assertOutputMap(outputTopic2, Collections.singletonList(outputRecord),
+        extraFieldsToVerify);
   }
 
   @Test(expected = AssertionError.class)
@@ -429,7 +431,8 @@ public class TopologyTesterTest {
 
     tester.pipeInput(inputTopic2, inputRecord);
 
-    tester.assertStoreContain(storeName2, Collections.singletonList(outputRecord), extraFieldsToVerify);
+    tester.assertStoreContain(storeName2, Collections.singletonList(outputRecord),
+        extraFieldsToVerify);
   }
 
   @Test

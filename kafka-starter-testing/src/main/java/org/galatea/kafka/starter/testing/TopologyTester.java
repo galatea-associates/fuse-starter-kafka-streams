@@ -41,7 +41,7 @@ import org.apache.kafka.streams.state.QueryableStoreType;
 import org.galatea.kafka.starter.messaging.Topic;
 import org.galatea.kafka.starter.testing.alias.AliasHelper;
 import org.galatea.kafka.starter.testing.avro.RecordPostProcessor;
-import org.galatea.kafka.starter.testing.conversion.ConversionUtil;
+import org.galatea.kafka.starter.testing.conversion.ConversionService;
 import org.springframework.util.FileSystemUtils;
 import org.unitils.reflectionassert.ReflectionComparatorMode;
 
@@ -56,7 +56,7 @@ public class TopologyTester implements Closeable {
   private final Set<Class<?>> beanClasses = new HashSet<>();
 
   @Getter
-  private final ConversionUtil typeConversionUtil = new ConversionUtil();
+  private final ConversionService typeConversionService = new ConversionService();
   private final Map<Class<?>, RecordPostProcessor<?>> postProcessors = new HashMap<>();
 
   /**
@@ -394,7 +394,7 @@ public class TopologyTester implements Closeable {
     boolean valueIsBean = valueIsBean(topicConfig);
 
     KeyValue<K, V> record = RecordBeanHelper
-        .createRecord(typeConversionUtil, expectedEntryMap, topicConfig, keyIsBean, valueIsBean);
+        .createRecord(typeConversionService, expectedEntryMap, topicConfig, keyIsBean, valueIsBean);
 
     return postProcessRecord(record);
   }
@@ -406,14 +406,14 @@ public class TopologyTester implements Closeable {
       Class<?> forClass = entry.getKey();
       RecordPostProcessor<?> processor = entry.getValue();
       if (processedKey == null && forClass.isInstance(record.key)) {
-        log.info("Post-processing key {}", record.key);
+        log.debug("Post-processing key {}", record.key);
         processedKey = useProcessor((RecordPostProcessor<K>) processor, record.key);
-        log.info("Processed key: {}", processedKey);
+        log.debug("Processed key: {}", processedKey);
       }
       if (processedValue == null && forClass.isInstance(record.value)) {
-        log.info("Post-processing key {}", record.value);
+        log.debug("Post-processing key {}", record.value);
         processedValue = useProcessor((RecordPostProcessor<V>) processor, record.value);
-        log.info("Processed value: {}", processedValue);
+        log.debug("Processed value: {}", processedValue);
       }
       if (processedKey != null && processedValue != null) {
         break;

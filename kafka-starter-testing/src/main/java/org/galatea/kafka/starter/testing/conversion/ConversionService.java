@@ -1,16 +1,16 @@
 package org.galatea.kafka.starter.testing.conversion;
 
-import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import javafx.util.Pair;
 
-public class ConversionUtil {
+public class ConversionService {
 
-  private final Map<Class, List<Pair<Pattern, Function<String, ?>>>> typeConversionMap = new HashMap<>();
+  private final Map<Class<?>, List<PotentialConversion<?>>> typeConversionMap = new HashMap<>();
 
   public static Object convertFieldValue(String fieldPath, String fieldValue,
       Map<String, Function<String, Object>> conversionMap) {
@@ -27,17 +27,17 @@ public class ConversionUtil {
   }
 
   public <T> void registerTypeConversion(Class<T> forClass, Pattern matchPattern,
-      Function<String, T> conversion) {
-    List<Pair<Pattern, Function<String, T>>> conversionList = conversionsForType(forClass);
-    conversionList.add(new Pair<>(matchPattern, conversion));
+      StringToObjectConversion<T> conversion) {
+    List<PotentialConversion<T>> conversionList = conversionsForType(forClass);
+    conversionList.add(new PotentialConversion<>(matchPattern, conversion));
   }
 
   @SuppressWarnings("unchecked")
-  private <T> List<Pair<Pattern, Function<String, T>>> conversionsForType(Class<T> forClass) {
+  private <T> List<PotentialConversion<T>> conversionsForType(Class<T> forClass) {
     if (!typeConversionMap.containsKey(forClass)) {
-      typeConversionMap.put(forClass, new ArrayList<>());
+      typeConversionMap.put(forClass, new LinkedList<>());
     }
-    return (ArrayList) typeConversionMap.get(forClass);
+    return (List) typeConversionMap.get(forClass);
   }
 
   /**
@@ -45,9 +45,10 @@ public class ConversionUtil {
    * conversion. otherwise return input object unmodified.
    */
   public <T> Object maybeUseTypeConversion(Class<T> forType, String stringValue) {
-    for (Pair<Pattern, Function<String, T>> conversionPair : conversionsForType(forType)) {
-      if (conversionPair.getKey().matcher(stringValue).find()) {
-        return conversionPair.getValue().apply(stringValue);
+    for (PotentialConversion<T> conversionPair : conversionsForType(forType)) {
+      Matcher matcher = conversionPair.getPattern().matcher(stringValue);
+      if (matcher.find()) {
+        return conversionPair.getStringToObjectConversion().apply(stringValue, matcher);
       }
     }
     return stringValue;

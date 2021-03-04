@@ -20,7 +20,7 @@ import org.galatea.kafka.starter.testing.bean.editor.JodaLocalDateEditor;
 import org.galatea.kafka.starter.testing.bean.editor.JodaLocalTimeEditor;
 import org.galatea.kafka.starter.testing.bean.editor.LocalDateEditor;
 import org.galatea.kafka.starter.testing.bean.editor.LocalTimeEditor;
-import org.galatea.kafka.starter.testing.conversion.ConversionUtil;
+import org.galatea.kafka.starter.testing.conversion.ConversionService;
 import org.springframework.beans.BeanWrapper;
 import org.springframework.beans.BeanWrapperImpl;
 import org.springframework.beans.TypeMismatchException;
@@ -42,7 +42,7 @@ public class RecordBeanHelper {
    * @throws Exception upon exception thrown in {@link TopicConfig#createKey()} or {@link
    * TopicConfig#createValue()}
    */
-  public static <K, V> KeyValue<K, V> createRecord(ConversionUtil conversionUtil,
+  public static <K, V> KeyValue<K, V> createRecord(ConversionService conversionService,
       Map<String, String> fields, TopicConfig<K, V> topicConfig, boolean keyIsBean,
       boolean valueIsBean) throws Exception {
 
@@ -51,7 +51,7 @@ public class RecordBeanHelper {
     K key;
     V value;
     if (keyIsBean) {
-      key = RecordBeanHelper.createKey(conversionUtil, fields, topicConfig, fieldsUsed);
+      key = RecordBeanHelper.createKey(conversionService, fields, topicConfig, fieldsUsed);
     } else {
       String keyObjectKey = PREFIX_KEY.substring(0, PREFIX_KEY.length() - 1);
       key = RecordBeanHelper
@@ -59,7 +59,7 @@ public class RecordBeanHelper {
     }
 
     if (valueIsBean) {
-      value = RecordBeanHelper.createValue(conversionUtil, fields, topicConfig, fieldsUsed);
+      value = RecordBeanHelper.createValue(conversionService, fields, topicConfig, fieldsUsed);
     } else {
       String valueObjectKey = PREFIX_VALUE.substring(0, PREFIX_VALUE.length() - 1);
       value = RecordBeanHelper
@@ -230,13 +230,13 @@ public class RecordBeanHelper {
    * @return key bean with properties assigned
    * @throws Exception upon {@link TopicConfig#createKey()} exception
    */
-  private static <K, V> K createKey(ConversionUtil conversionUtil, Map<String, String> fields,
+  private static <K, V> K createKey(ConversionService conversionService, Map<String, String> fields,
       TopicConfig<K, V> topicConfig, Set<String> fieldsUsed) throws Exception {
 
     Map<String, Function<String, Object>> conversions = topicConfig.getConversions();
     Map<String, String> aliases = topicConfig.getAliases();
     Map<String, String> defaultValues = topicConfig.getDefaultValues();
-    K populatedKey = createBeanWithValues(conversionUtil, topicConfig.getCreateEmptyKey(), fields,
+    K populatedKey = createBeanWithValues(conversionService, topicConfig.getCreateEmptyKey(), fields,
         conversions, aliases, defaultValues, fieldsUsed, RecordBeanHelper.PREFIX_KEY,
         RecordBeanHelper.PREFIX_VALUE);
 
@@ -259,7 +259,7 @@ public class RecordBeanHelper {
    * @return value bean with properties assigned
    * @throws Exception upon {@link TopicConfig#createValue()} exception
    */
-  private static <K, V> V createValue(ConversionUtil conversionUtil, Map<String, String> fields,
+  private static <K, V> V createValue(ConversionService conversionService, Map<String, String> fields,
       TopicConfig<K, V> topicConfig, Set<String> fieldsUsed) throws Exception {
 
     Map<String, Function<String, Object>> conversions = topicConfig.getConversions();
@@ -273,7 +273,7 @@ public class RecordBeanHelper {
       return null;
     }
 
-    V populatedValue = createBeanWithValues(conversionUtil, topicConfig.getCreateEmptyValue(),
+    V populatedValue = createBeanWithValues(conversionService, topicConfig.getCreateEmptyValue(),
         fields, conversions, aliases, defaultValues, fieldsUsed, RecordBeanHelper.PREFIX_VALUE,
         RecordBeanHelper.PREFIX_KEY);
 
@@ -308,7 +308,7 @@ public class RecordBeanHelper {
    * the inclusion of that field in the bean.
    * @return modified bean.
    */
-  private static <T> T createBeanWithValues(ConversionUtil conversionUtil,
+  private static <T> T createBeanWithValues(ConversionService conversionService,
       Callable<T> createBeanMethod, Map<String, String> fields,
       Map<String, Function<String, Object>> conversions, Map<String, String> aliases,
       Map<String, String> defaultValues, Set<String> fieldsUsed, String maybeIncludePrefix,
@@ -320,17 +320,17 @@ public class RecordBeanHelper {
     fields = AliasHelper.expandAliasKeys(fields, aliases);
     BeanWrapper wrappedObj = wrapBean(createBeanMethod.call());
 
-    setFieldsInBean(wrappedObj, defaultValues, conversionUtil, conversions, alwaysExcludePrefix,
+    setFieldsInBean(wrappedObj, defaultValues, conversionService, conversions, alwaysExcludePrefix,
         maybeIncludePrefix);
 
-    Set<String> fieldsSet = setFieldsInBean(wrappedObj, fields, conversionUtil, conversions,
+    Set<String> fieldsSet = setFieldsInBean(wrappedObj, fields, conversionService, conversions,
         alwaysExcludePrefix, maybeIncludePrefix);
     fieldsUsed.addAll(fieldsSet);
     return (T) wrappedObj.getWrappedInstance();
   }
 
   private static Set<String> setFieldsInBean(BeanWrapper wrappedObj,
-      Map<String, String> defaultValues, ConversionUtil conversionUtil,
+      Map<String, String> defaultValues, ConversionService conversionService,
       Map<String, Function<String, Object>> conversions, String alwaysExcludePrefix,
       String maybeIncludePrefix) {
     Set<String> fieldsUsed = new HashSet<>();
@@ -344,7 +344,7 @@ public class RecordBeanHelper {
           fieldPathWithoutPrefix = fullFieldPath.substring(maybeIncludePrefix.length());
         }
 
-        if (trySetField(wrappedObj, fieldPathWithoutPrefix, fieldValue, conversionUtil,
+        if (trySetField(wrappedObj, fieldPathWithoutPrefix, fieldValue, conversionService,
             conversions)) {
           fieldsUsed.add(fullFieldPath);
         }
@@ -354,15 +354,15 @@ public class RecordBeanHelper {
   }
 
   private static boolean trySetField(BeanWrapper wrappedBean, String fieldPath, String value,
-      ConversionUtil conversionUtil, Map<String, Function<String, Object>> conversions) {
+      ConversionService conversionService, Map<String, Function<String, Object>> conversions) {
 
     if (wrappedBean.isReadableProperty(fieldPath)) {
       Object valueToApply;
-      if (ConversionUtil.hasFieldConversionMethod(fieldPath, conversions)) {
-        valueToApply = ConversionUtil
+      if (ConversionService.hasFieldConversionMethod(fieldPath, conversions)) {
+        valueToApply = ConversionService
             .convertFieldValue(fieldPath, value, conversions);
       } else {
-        valueToApply = conversionUtil
+        valueToApply = conversionService
             .maybeUseTypeConversion(wrappedBean.getPropertyType(fieldPath),
                 value);
       }
