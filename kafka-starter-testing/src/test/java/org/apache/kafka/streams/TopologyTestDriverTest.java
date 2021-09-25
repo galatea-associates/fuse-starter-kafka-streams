@@ -2,6 +2,7 @@ package org.apache.kafka.streams;
 
 import static org.junit.Assert.assertEquals;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicLong;
@@ -9,6 +10,7 @@ import java.util.function.UnaryOperator;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.common.serialization.Serdes;
+import org.apache.kafka.streams.TopologyTestDriver.DeferredRecord;
 import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.KeyValueMapper;
@@ -30,6 +32,7 @@ public class TopologyTestDriverTest {
   private TestOutputTopic<String, String> testOutputTopic;
   private TestInputTopic<String, String> testInputTopic;
   private UnaryOperator<String> mapNextKey;
+  private TopologyTestDriver driver;
 
   @Before
   public void setup() {
@@ -37,7 +40,11 @@ public class TopologyTestDriverTest {
     mapNextKey = null;
   }
 
-  private void setupTopology(boolean repartitionAfterMap) {
+  private enum TransformOutputValue {
+    STORE_ENTRY_COUNT, INPUT_VALUE
+  }
+
+  private void setupTopology(boolean repartitionAfterMap, TransformOutputValue outputValueType) {
     StreamsBuilder builder = new StreamsBuilder();
 
     builder.addStateStore(Stores
@@ -46,39 +53,48 @@ public class TopologyTestDriverTest {
 
     KStream<String, String> stream = builder
         .stream(INPUT_TOPIC, Consumed.with(Serdes.String(), Serdes.String()))
+        .peek((key, value) -> log.info("Consumed {} | {}", key, value))
         .map((KeyValueMapper<String, String, KeyValue<String, String>>) (key, value) -> KeyValue
-            .pair(mapNextKey != null ? mapNextKey.apply(key) : key, value));
+            .pair(mapNextKey != null ? mapNextKey.apply(key) : key, value))
+        .peek((key, value) -> log.info("post-map {} | {}", key, value));
 
     if (repartitionAfterMap) {
-      stream = stream.through(REPARTITION_TOPIC, Produced.with(Serdes.String(), Serdes.String()));
+      stream = stream.through(REPARTITION_TOPIC, Produced.with(Serdes.String(), Serdes.String()))
+          .peek((key, value) -> log.info("post-repartition {} | {}", key, value));
     }
 
-    stream
-        .transform(() -> new Transformer<String, String, KeyValue<String, String>>() {
+    stream.transform(() -> new Transformer<String, String, KeyValue<String, String>>() {
 
-          private ProcessorContext context;
-          private KeyValueStore<String, String> store;
+      private ProcessorContext context;
+      private KeyValueStore<String, String> store;
 
-          @Override
-          public void init(ProcessorContext context) {
-            this.context = context;
-            store = (KeyValueStore<String, String>) context.getStateStore(STORE_NAME);
-          }
+      @Override
+      public void init(ProcessorContext context) {
+        this.context = context;
+        store = (KeyValueStore<String, String>) context.getStateStore(STORE_NAME);
+      }
 
-          @Override
-          public KeyValue<String, String> transform(String key, String value) {
-            log.info("Task {} processing {} | {}", context.taskId(), key, value);
-            AtomicLong counter = new AtomicLong(0);
-            store.put(key, value);
-            store.all().forEachRemaining(kv -> counter.incrementAndGet());
-            return KeyValue.pair(key, String.valueOf(counter.get()));
-          }
+      @Override
+      public KeyValue<String, String> transform(String key, String value) {
+        log.info("Task {} processing {} | {}", context.taskId(), key, value);
+        AtomicLong counter = new AtomicLong(0);
+        store.put(key, value);
+        String outputValue;
+        if (outputValueType == TransformOutputValue.STORE_ENTRY_COUNT) {
+          store.all().forEachRemaining(kv -> counter.incrementAndGet());
+          outputValue = String.valueOf(counter.get());
+        } else {
+          outputValue = value;
+        }
+        return KeyValue.pair(key, outputValue);
+      }
 
-          @Override
-          public void close() {
+      @Override
+      public void close() {
 
-          }
-        }, STORE_NAME)
+      }
+    }, STORE_NAME)
+        .peek((key, value) -> log.info("Producing {} | {}", key, value))
         .to(OUTPUT_TOPIC, Produced.with(Serdes.String(), Serdes.String()));
 
     Properties config = new Properties();
@@ -91,11 +107,12 @@ public class TopologyTestDriverTest {
     testInputTopic = driver.createInputTopic(INPUT_TOPIC, serde.serializer(), serde.serializer());
     testOutputTopic = driver
         .createOutputTopic(OUTPUT_TOPIC, serde.deserializer(), serde.deserializer());
+    this.driver = driver;
   }
 
   @Test
   public void testTasksHaveSegregatedState() {
-    setupTopology(false);
+    setupTopology(false, TransformOutputValue.STORE_ENTRY_COUNT);
 
     // keys "0", "1", "2" are assigned to separate partitions, so will be processed by separate
     // tasks
@@ -116,8 +133,26 @@ public class TopologyTestDriverTest {
   }
 
   @Test
+  public void deferredProcessing() {
+    setupTopology(true, TransformOutputValue.INPUT_VALUE);
+    mapNextKey = s -> "3";
+
+    driver.setRecordOrdering(Comparator.comparingLong(DeferredRecord::getOrderId).reversed());
+    driver.startDeferring();
+
+    testInputTopic.pipeInput("0", "value1");
+    testInputTopic.pipeInput("1", "value2");
+
+    driver.doDeferredProcessing();
+    List<KeyValue<String, String>> output = testOutputTopic.readKeyValuesToList();
+    assertEquals(2, output.size());
+    assertEquals("value2", output.get(0).value);
+    assertEquals("value1", output.get(1).value);
+  }
+
+  @Test
   public void recordsOnSameTaskShareState() {
-    setupTopology(false);
+    setupTopology(false, TransformOutputValue.STORE_ENTRY_COUNT);
 
     // "3" and "4" are both assigned to task 3 (with 10 partitions), so after the 2nd record the
     // state store will have 2 entries
@@ -134,7 +169,7 @@ public class TopologyTestDriverTest {
 
   @Test
   public void recordsAreNotImmediatelyReassignedTaskOnMap() {
-    setupTopology(false);
+    setupTopology(false, TransformOutputValue.STORE_ENTRY_COUNT);
 
     // keys "0", "1", "2" are assigned to separate partitions, so will be processed by separate
     // tasks
@@ -161,7 +196,7 @@ public class TopologyTestDriverTest {
 
   @Test
   public void recordsAreReassignedTaskOnRepartition() {
-    setupTopology(true);
+    setupTopology(true, TransformOutputValue.STORE_ENTRY_COUNT);
 
     // This record will be consumed by task for "0", mapped to key "3", repartitioned, consumed by task for "3"
     mapNextKey = k -> "3";

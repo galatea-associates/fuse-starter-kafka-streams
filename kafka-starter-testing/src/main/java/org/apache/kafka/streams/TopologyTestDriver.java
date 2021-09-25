@@ -26,6 +26,11 @@
  *    - getSessionStore(String)
  *  - Removed deprecated pipeInput(ConsumerRecord)
  *  - getKeyValueStore(String) returns facade store that aggregates underlying task stores (read-only)
+ * Modified by Grant Wade on 2021-09-21:
+ *  - add processing mode where records are not processed immediately, instead deferred until
+ *     #doDeferredProcessing is called, at which point records will be processed according to order
+ *     based on results from #recordOrdering Comparator. This allows records to be processed out of
+ *     expected order if a repartition may cause them to be out of order.
  */
 package org.apache.kafka.streams;
 
@@ -44,6 +49,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.Queue;
 import java.util.Set;
@@ -54,6 +60,8 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import lombok.Builder;
 import lombok.NonNull;
+import lombok.Setter;
+import lombok.Value;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.clients.consumer.OffsetResetStrategy;
@@ -143,6 +151,10 @@ public class TopologyTestDriver implements Closeable {
   private final MockCluster cluster;
   private final int partitionCount;
   private final Map<String, Pair<Deserializer<?>, Deserializer<?>>> topicDeserializers = new HashMap<>();
+  @Setter
+  private Comparator<DeferredRecord> recordOrdering = Comparator.comparingLong(DeferredRecord::getOrderId);
+  private boolean processingDeferred = false;
+  private long lastDeferredOrderId = 0;
 
   /**
    * Create a new test diver instance. Initialized the internally mocked wall-clock time with {@link
@@ -152,7 +164,7 @@ public class TopologyTestDriver implements Closeable {
    * @param config the configuration for the topology
    */
   public TopologyTestDriver(final Topology topology,
-      final Properties config, MockCluster cluster) {
+                            final Properties config, MockCluster cluster) {
     this(topology, config, null, new DefaultPartitioner(), cluster);
   }
 
@@ -165,10 +177,10 @@ public class TopologyTestDriver implements Closeable {
    */
   @Builder
   public TopologyTestDriver(@NonNull final Topology topology,
-      @NonNull final Properties config,
-      final Instant initialWallClockTime,
-      final Partitioner partitioner,
-      @NonNull final MockCluster cluster) {
+                            @NonNull final Properties config,
+                            final Instant initialWallClockTime,
+                            final Partitioner partitioner,
+                            @NonNull final MockCluster cluster) {
     this(
         topology.internalTopologyBuilder,
         config,
@@ -186,10 +198,10 @@ public class TopologyTestDriver implements Closeable {
    * @param initialWallClockTimeMs the initial value of internally mocked wall-clock time
    */
   private TopologyTestDriver(final InternalTopologyBuilder builder,
-      final Properties config,
-      final long initialWallClockTimeMs,
-      Partitioner partitioner,
-      MockCluster cluster) {
+                             final Properties config,
+                             final long initialWallClockTimeMs,
+                             Partitioner partitioner,
+                             MockCluster cluster) {
     partitionCount = cluster.getNumPartitions();
     this.cluster = cluster;
     this.partitioner = partitioner;
@@ -208,8 +220,7 @@ public class TopologyTestDriver implements Closeable {
     stateDirectory = new StateDirectory(streamsConfig, mockWallClockTime, createStateDirectory);
 
     final Serializer<byte[]> bytesSerializer = new ByteArraySerializer();
-    producer = new MockProducer<>(cluster, true, partitioner, bytesSerializer,
-        bytesSerializer);
+    producer = new MockProducer<>(cluster, true, partitioner, bytesSerializer, bytesSerializer);
 
     final MetricConfig metricConfig = new MetricConfig()
         .samples(streamsConfig.getInt(StreamsConfig.METRICS_NUM_SAMPLES_CONFIG))
@@ -247,17 +258,17 @@ public class TopologyTestDriver implements Closeable {
     final StateRestoreListener stateRestoreListener = new StateRestoreListener() {
       @Override
       public void onRestoreStart(final TopicPartition topicPartition, final String storeName,
-          final long startingOffset, final long endingOffset) {
+                                 final long startingOffset, final long endingOffset) {
       }
 
       @Override
       public void onBatchRestored(final TopicPartition topicPartition, final String storeName,
-          final long batchEndOffset, final long numRestored) {
+                                  final long batchEndOffset, final long numRestored) {
       }
 
       @Override
       public void onRestoreEnd(final TopicPartition topicPartition, final String storeName,
-          final long totalRestored) {
+                               final long totalRestored) {
       }
     };
 
@@ -395,10 +406,10 @@ public class TopologyTestDriver implements Closeable {
   }
 
   private void pipeRecord(final String topicName,
-      final long timestamp,
-      final byte[] key,
-      final byte[] value,
-      final Headers headers, int partition) {
+                          final long timestamp,
+                          final byte[] key,
+                          final byte[] value,
+                          final Headers headers, int partition) {
     final TopicPartition inputTopicOrPatternPartition = getInputTopicOrPatternPartition(topicName,
         partition);
     final TopicPartition globalInputTopicPartition = getGlobalTopicOrPatternPartition(topicName,
@@ -425,16 +436,16 @@ public class TopologyTestDriver implements Closeable {
     return null;
   }
 
-  private void enqueueTaskRecord(final String inputTopic,
-      final TopicPartition topicOrPatternPartition,
-      final long timestamp,
-      final byte[] key,
-      final byte[] value,
-      final Headers headers) {
+  private StreamTask enqueueTaskRecord(final String inputTopic,
+                                       final TopicPartition topicOrPatternPartition,
+                                       final long timestamp,
+                                       final byte[] key,
+                                       final byte[] value,
+                                       final Headers headers) {
 
     if (!offsetsByTopicOrPatternPartition.containsKey(topicOrPatternPartition)) {
       // this record must not be consumed by stream tasks
-      return;
+      return null;
     }
     StreamTask task = tasks.get(topicOrPatternPartition.partition());
     task.addRecords(topicOrPatternPartition, Collections.singleton(new ConsumerRecord<>(
@@ -449,6 +460,7 @@ public class TopologyTestDriver implements Closeable {
         key,
         value,
         headers)));
+    return task;
   }
 
   private void completeAllProcessableWork() {
@@ -473,20 +485,50 @@ public class TopologyTestDriver implements Closeable {
 
           recordsToProcess = true;
 
-          captureOutputsAndReEnqueueInternalResults();
+          processRecordsAccordingToOrder(captureOutputs());
         }
       }
 
     } while (recordsToProcess);
 
-    captureOutputsAndReEnqueueInternalResults();
+    processRecordsAccordingToOrder(captureOutputs());
+  }
+
+  private boolean processUntilRepartition() {
+    // for internally triggered processing (like wall-clock punctuations),
+    // we might have buffered some records to internal topics that need to
+    // be piped back in to kick-start the processing loop. This is idempotent
+    // and therefore harmless in the case where all we've done is enqueued an
+    // input record from the user.
+    boolean processedAnything = false;
+
+    boolean recordsToProcess;
+    do {
+      recordsToProcess = false;
+
+// 2020-12-28 Update: iterate through all tasks as long as there are records to process,
+//  since a record may be repartitioned into another task
+      for (StreamTask task : tasks) {
+        if (task.hasRecordsQueued()) {
+          processedAnything = true;
+          task.process();
+          task.maybePunctuateStreamTime();
+          task.commit();
+
+          recordsToProcess = true;
+        }
+      }
+
+    } while (recordsToProcess);
+
+    return processedAnything;
   }
 
   private void processGlobalRecord(final TopicPartition globalInputTopicPartition,
-      final long timestamp,
-      final byte[] key,
-      final byte[] value,
-      final Headers headers) {
+                                   final long timestamp,
+                                   final byte[] key,
+                                   final byte[] value,
+                                   final Headers headers) {
     globalStateTask.update(new ConsumerRecord<>(
         globalInputTopicPartition.topic(),
         globalInputTopicPartition.partition(),
@@ -514,7 +556,7 @@ public class TopologyTestDriver implements Closeable {
     }
   }
 
-// TODO: rename this to not include "pattern"
+  // TODO: rename this to not include "pattern"
   private TopicPartition getInputTopicOrPatternPartition(final String topicName, int partition) {
     if (!internalTopologyBuilder.sourceTopicNames().isEmpty()) {
       validateSourceTopicNameRegexPattern(topicName);
@@ -529,48 +571,85 @@ public class TopologyTestDriver implements Closeable {
     return null;
   }
 
-  private void captureOutputsAndReEnqueueInternalResults() {
+  private Map<TopicPartition, Queue<DeferredRecord>> captureOutputs() {
     // Capture all the records sent to the producer ...
-    final List<ProducerRecord<byte[], byte[]>> output = producer.history();
+
+    List<ProducerRecord<byte[], byte[]>> output = producer.history();
     producer.clear();
     if (eosEnabled && !producer.closed()) {
       producer.initTransactions();
       producer.beginTransaction();
     }
+
+    Map<TopicPartition, Queue<DeferredRecord>> records = new HashMap<>();
+
     for (final ProducerRecord<byte[], byte[]> record : output) {
       outputRecordsByTopic.computeIfAbsent(record.topic(), k -> new LinkedList<>()).add(record);
+      records.computeIfAbsent(new TopicPartition(record.topic(), record.partition()), t -> new LinkedList<>())
+          .add(new DeferredRecord(record.topic(), record.timestamp(), record.key(), record.value(),
+              record.headers(), record.partition(), ++lastDeferredOrderId));
+    }
+
+    return records;
+  }
+
+  private boolean processRecordsAccordingToOrder(Map<TopicPartition, Queue<DeferredRecord>> records) {
+    boolean processedRecords = false;
+    while (!records.isEmpty()) {
+
+      // find the record most suited to be processed next
+      Optional<DeferredRecord> processRecord = records.values()
+          .stream()
+          .map(Queue::peek)
+          .filter(Objects::nonNull)
+          .min(recordOrdering);
+
+      if (!processRecord.isPresent()) {
+        break;
+      }
+
+      processedRecords = true;
+      DeferredRecord record = processRecord.get();
+      records.get(new TopicPartition(record.getTopicName(), record.getPartition())).poll();
 
       // Forward back into the topology if the produced record is to an internal or a source topic ...
-      final String outputTopicName = record.topic();
+      final String outputTopicName = record.getTopicName();
 
 // 2020-12-28 Update: use record partition to get specific TopicPartition
       final TopicPartition inputTopicOrPatternPartition = getInputTopicOrPatternPartition(
-          outputTopicName, record.partition());
+          outputTopicName, record.getPartition());
       final TopicPartition globalInputTopicPartition = getGlobalTopicOrPatternPartition(
-          outputTopicName, record.partition());
+          outputTopicName, record.getPartition());
 
       if (inputTopicOrPatternPartition != null) {
-        enqueueTaskRecord(
+        StreamTask task = enqueueTaskRecord(
             outputTopicName,
             inputTopicOrPatternPartition,
-            record.timestamp(),
-            record.key(),
-            record.value(),
-            record.headers());
+            record.getTimestamp(),
+            record.getKey(),
+            record.getValue(),
+            record.getHeaders());
+
+        while (task != null && task.hasRecordsQueued()) {
+          task.process();
+          task.maybePunctuateStreamTime();
+          task.commit();
+        }
       }
 
       if (globalInputTopicPartition != null) {
         processGlobalRecord(
             globalInputTopicPartition,
-            record.timestamp(),
-            record.key(),
-            record.value(),
-            record.headers());
+            record.getTimestamp(),
+            record.getKey(),
+            record.getValue(),
+            record.getHeaders());
       }
     }
+    return processedRecords;
   }
 
-// TODO: remove
+
   /**
    * {@link MockProducer#history()} doesn't record the assigned partition for "produced" records, so
    * need to use the provided {@link Partitioner} directly here
@@ -651,8 +730,8 @@ public class TopologyTestDriver implements Closeable {
    */
   @Deprecated
   public <K, V> ProducerRecord<K, V> readOutput(final String topic,
-      final Deserializer<K> keyDeserializer,
-      final Deserializer<V> valueDeserializer) {
+                                                final Deserializer<K> keyDeserializer,
+                                                final Deserializer<V> valueDeserializer) {
     final ProducerRecord<byte[], byte[]> record = readOutput(topic);
     if (record == null) {
       return null;
@@ -685,11 +764,11 @@ public class TopologyTestDriver implements Closeable {
    * @param <V> the value type
    * @return {@link TestInputTopic} object
    */
-   // 2020-12-28 Update: use PartitionedTestInputTopic instead of TestInputTopic
-   //  because of the new class PartitionedTopologyTestDriver
+  // 2020-12-28 Update: use PartitionedTestInputTopic instead of TestInputTopic
+  //  because of the new class PartitionedTopologyTestDriver
   public final <K, V> TestInputTopic<K, V> createInputTopic(final String topicName,
-      final Serializer<K> keySerializer,
-      final Serializer<V> valueSerializer) {
+                                                            final Serializer<K> keySerializer,
+                                                            final Serializer<V> valueSerializer) {
     return new TestInputTopic<>(this, topicName, keySerializer,
         valueSerializer, Instant.now(), Duration.ZERO);
   }
@@ -704,11 +783,11 @@ public class TopologyTestDriver implements Closeable {
    * @param <V> the value type
    * @return {@link TestOutputTopic} object
    */
-   // 2020-12-28 Update: use PartitionedTestOutputTopic instead of TestOutputTopic
-   //  because of the new class PartitionedTopologyTestDriver
+  // 2020-12-28 Update: use PartitionedTestOutputTopic instead of TestOutputTopic
+  //  because of the new class PartitionedTopologyTestDriver
   public final <K, V> TestOutputTopic<K, V> createOutputTopic(final String topicName,
-      final Deserializer<K> keyDeserializer,
-      final Deserializer<V> valueDeserializer) {
+                                                              final Deserializer<K> keyDeserializer,
+                                                              final Deserializer<V> valueDeserializer) {
     TestOutputTopic<K, V> topic = new TestOutputTopic<>(this, topicName,
         keyDeserializer, valueDeserializer);
     topicDeserializers.put(topicName, Pair.of(keyDeserializer, valueDeserializer));
@@ -724,8 +803,8 @@ public class TopologyTestDriver implements Closeable {
   }
 
   <K, V> TestRecord<K, V> readRecord(final String topic,
-      final Deserializer<K> keyDeserializer,
-      final Deserializer<V> valueDeserializer) {
+                                     final Deserializer<K> keyDeserializer,
+                                     final Deserializer<V> valueDeserializer) {
     final Queue<? extends ProducerRecord<byte[], byte[]>> outputRecords = getRecordsQueue(topic);
     if (outputRecords == null) {
       throw new NoSuchElementException("Uninitialized topic: " + topic);
@@ -740,10 +819,10 @@ public class TopologyTestDriver implements Closeable {
   }
 
   <K, V> void pipeRecord(final String topic,
-      final TestRecord<K, V> record,
-      final Serializer<K> keySerializer,
-      final Serializer<V> valueSerializer,
-      final Instant time) {
+                         final TestRecord<K, V> record,
+                         final Serializer<K> keySerializer,
+                         final Serializer<V> valueSerializer,
+                         final Instant time) {
     final byte[] serializedKey = keySerializer.serialize(topic, record.headers(), record.key());
     final byte[] serializedValue = valueSerializer
         .serialize(topic, record.headers(), record.value());
@@ -765,8 +844,54 @@ public class TopologyTestDriver implements Closeable {
         .partition(topic, record.key(), serializedKey, record.value(), serializedValue,
             cluster.getImmutable());
 
-    pipeRecord(topic, timestamp, serializedKey, serializedValue, record.headers(), partition);
+    if (processingDeferred) {
+      deferredRecords.computeIfAbsent(new TopicPartition(topic, partition), t -> new LinkedList<>())
+          .add(new DeferredRecord(topic, timestamp, serializedKey, serializedValue,
+              record.headers(), partition, ++lastDeferredOrderId));
+    } else {
+      pipeRecord(topic, timestamp, serializedKey, serializedValue, record.headers(), partition);
+    }
   }
+
+  public void startDeferring() {
+    lastDeferredOrderId = 0;
+    processingDeferred = true;
+  }
+
+  public void doDeferredProcessing() {
+    processingDeferred = false;
+
+    Map<TopicPartition, Queue<DeferredRecord>> records = this.deferredRecords;
+
+    while (!records.isEmpty() && processRecordsAccordingToOrder(records)) {
+      records = captureOutputs();
+    }
+    this.deferredRecords.clear();
+
+    /*
+    | partition | recordId |
+    | 0         | 1        |
+    | 1         | 2        |
+    | 2         | 3        |
+    | 1         | 4        |
+
+    going in reverse chronological, potential records to process:
+    | partition | recordId |
+    | 0         | 1        |
+    | 1         | 2        |
+    | 2         | 3        |
+
+    look for partition with the latest timestamp at the front of the queue
+
+    part 0: 1
+    part 1: 2, 4
+    part 2: 3
+
+    optimal processing: 3(2), 2(1), 4(1), 1(0)
+     */
+  }
+
+  private final Map<TopicPartition, Queue<DeferredRecord>> deferredRecords = new HashMap<>();
 
   final long getQueueSize(final String topic) {
     final Queue<ProducerRecord<byte[], byte[]>> queue = getRecordsQueue(topic);
@@ -798,7 +923,7 @@ public class TopologyTestDriver implements Closeable {
    * @return all stores my name
    * @see #getKeyValueStore(String)
    */
-   // 2020-12-28 Update: return collection of stores for each name, one per Stream Task
+  // 2020-12-28 Update: return collection of stores for each name, one per Stream Task
   public Map<String, Collection<StateStore>> getAllStateStores() {
 
     final Map<String, Collection<StateStore>> allStores = new HashMap<>();
@@ -816,9 +941,9 @@ public class TopologyTestDriver implements Closeable {
   // 2020-12-28 Update: remove method StateStore getStateStore(name) because with multiple
   //  tasks you cannot get a single mutable store
 
-// 2020-12-28 Update:  add StreamTask argument in order to retrieve a single store based on name
+  // 2020-12-28 Update:  add StreamTask argument in order to retrieve a single store based on name
   private StateStore getStateStore(final String name,
-      final boolean throwForBuiltInStores, StreamTask task) {
+                                   final boolean throwForBuiltInStores, StreamTask task) {
 
     if (task != null) {
       final StateStore stateStore = ((ProcessorContextImpl) task.context()).getStateMgr()
@@ -845,9 +970,9 @@ public class TopologyTestDriver implements Closeable {
     return null;
   }
 
-// 2020-12-28 Update: add method, in order to get all state stores for a given name
+  // 2020-12-28 Update: add method, in order to get all state stores for a given name
   private Collection<StateStore> getStateStores(final String name,
-      final boolean throwForBuiltInStores) {
+                                                final boolean throwForBuiltInStores) {
 
     return tasks.stream()
         .map(task -> getStateStore(name, throwForBuiltInStores, task))
@@ -892,8 +1017,8 @@ public class TopologyTestDriver implements Closeable {
    * @return the key value store, or {@code null} if no {@link KeyValueStore} or {@link
    * TimestampedKeyValueStore} has been registered with the given name
    */
-   // 2020-12-28 Update: make the returned store a read-only store that is an
-   //  aggregate store of all the underlying task stores
+  // 2020-12-28 Update: make the returned store a read-only store that is an
+  //  aggregate store of all the underlying task stores
   @SuppressWarnings("unchecked")
   public <K, V> KeyValueStore<K, V> getKeyValueStore(final String name) {
     Collection<StateStore> stores = getStateStores(name, false);
@@ -920,7 +1045,7 @@ public class TopologyTestDriver implements Closeable {
    * Close the driver, its topology, and all processors.
    */
   public void close() {
-  // 2020-12-28 Update: close each stream task
+    // 2020-12-28 Update: close each stream task
     for (StreamTask task : tasks) {
       if (task != null) {
         task.close(true, false);
@@ -983,7 +1108,7 @@ public class TopologyTestDriver implements Closeable {
 
     @Override
     public void waitObject(final Object obj, final Supplier<Boolean> condition,
-        final long timeoutMs) {
+                           final long timeoutMs) {
       throw new UnsupportedOperationException();
     }
 
@@ -1025,5 +1150,16 @@ public class TopologyTestDriver implements Closeable {
       }
     }
     return consumer;
+  }
+
+  @Value
+  public static class DeferredRecord {
+    String topicName;
+    long timestamp;
+    byte[] key;
+    byte[] value;
+    Headers headers;
+    int partition;
+    long orderId;
   }
 }
