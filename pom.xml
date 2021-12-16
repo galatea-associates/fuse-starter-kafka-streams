@@ -11,6 +11,7 @@
     <module>core-messaging</module>
     <module>core</module>
     <module>core-kafka-streams</module>
+    <module>resetless-streams</module>
   </modules>
 
   <parent>
