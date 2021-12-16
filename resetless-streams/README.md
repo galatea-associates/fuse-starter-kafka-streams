@@ -23,6 +23,8 @@ Create framework that handles state management such that resets are not necessar
 - java logic update
 
 ## Scenario diagrams
+<!-- To edit diagrams, go to https://www.plantuml.com/plantuml/uml/Km00 and copy the svg url into "decode URL" and click "decode"
+When finished editing, right click "View as SVG" and select "Copy link URL" and paste in place of current URL -->
 ### Basic topology (single input, single processor)
 ![Basic topology](https://www.plantuml.com/plantuml/svg/hP71IWCn48RlUOhnPg4zzBe7AUX5H1GhlPGUnisWePjCI2OBHVhk9cbbkolqv36PR_xvc5b5mI39Tkf6liWIj1HIH-XKt1ldCQ253sptdu6Jq_VSSO1duwGDX5Qf38XfZKSdyEXyadVsfWMCOEHlyJLmIp5og80V0MzKNsBObMgepn7nW8AZ13rEU4cIPwobc9KoHwMCmE8kZshWUq-7vHnwx18jZygn471FeNW0h0M56WLJZ9o6WkOaNv9EMZcjo3pHOGxRouRTKPs8mcf_ZHi4z4ZWDXwYa9t1Xa8qx1heb-NRb0NEhWGEgfVH3PnN1WieDnCwxsbJ-zJ_UrH6A5ZI1eK6D4ENXJgfubo5ChZjC_DBx-Q3wUGMkjw2OpDaJ-5LffFjVW00)
 
